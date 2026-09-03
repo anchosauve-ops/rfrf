@@ -90,7 +90,14 @@ Production build:
 
 ```bash
 pnpm build
-pnpm start        # serves API + web on :8787
+pnpm start        # serves API + web on 127.0.0.1:8787
+```
+
+Docker (one container, one volume):
+
+```bash
+docker build -t kairos .
+docker run --rm -p 8787:8787 -v kairos-data:/data -e ANTHROPIC_API_KEY=sk-ant-… kairos
 ```
 
 Environment (all optional, see `.env.example`):
@@ -101,6 +108,8 @@ Environment (all optional, see `.env.example`):
 | `KAIROS_MODEL` | `claude-opus-5` | Model id (also settable in the UI) |
 | `KAIROS_DB` | `./data/kairos.db` | Where your life lives |
 | `PORT` | `8787` | Server port |
+| `HOST` | `127.0.0.1` | Bind address (`0.0.0.0` in containers) |
+| `KAIROS_ALLOWED_ORIGINS` | localhost dev origins | Extra browser origins allowed to call the API |
 
 ## Talk to it
 
@@ -162,6 +171,6 @@ docs         vision, architecture, screenshots
 
 ## Status
 
-v0.1. Single-user, local-first, no accounts. Calendar sync (CalDAV/Google), email triage, a native mobile shell and multi-device sync are the obvious next layers; the domain core is built so they slot in as adapters rather than rewrites.
+v1.0.0. Single-user, local-first, no accounts. See [CHANGELOG](CHANGELOG.md). Calendar sync (CalDAV/Google), email triage, a native mobile shell and multi-device sync are the obvious next layers; the domain core is built so they slot in as adapters rather than rewrites.
 
 MIT © 2026 Kairos contributors

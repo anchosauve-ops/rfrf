@@ -99,7 +99,7 @@ export function SettingsView() {
         <button className="btn" onClick={() => void exportAll()}>Export everything (JSON)</button>
         <label className="btn">Import JSON<input type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && void importAll(e.target.files[0])} /></label>
         <button className="btn ghost" onClick={() => api.post("/demo").then(() => { for (const x of ["task", "event", "memory", "person"]) emitLocal({ type: "mutation", entity: x }); toast("Demo day loaded"); })}>Load demo day</button>
-        <span className="muted small" style={{ marginLeft: "auto" }}>Kairos v0.1 · local-first · MIT</span>
+        <span className="muted small" style={{ marginLeft: "auto" }}>Kairos 1.0 · local-first · MIT</span>
       </div>
     </div>
   );

@@ -30,7 +30,22 @@ export function createApp(opts: AppOptions = {}) {
   const now = () => opts.now?.() ?? new Date();
 
   const app = new Hono();
-  app.use("/api/*", cors());
+  // Local-first: only the app's own origin (and the Vite dev server) may call the API from a browser.
+  app.use(
+    "/api/*",
+    cors({
+      origin: (origin) => {
+        if (!origin) return origin;
+        const allowed = (process.env.KAIROS_ALLOWED_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173").split(",").map((o) => o.trim());
+        if (allowed.includes(origin)) return origin;
+        try {
+          const u = new URL(origin);
+          if (["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)) return origin;
+        } catch { /* ignore */ }
+        return "";
+      },
+    }),
+  );
   app.onError((err, c) => {
     console.error(err);
     return c.json({ error: err.message }, 500);
