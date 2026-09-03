@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { connectLive, onLive } from "./lib/api";
 import { navigate, refreshContext, setState, useStore } from "./lib/store";
 import { Composer } from "./components/Composer";
@@ -31,12 +31,15 @@ export function App() {
   const view = useStore((s) => s.view);
   const ctx = useStore((s) => s.ctx);
   const toastMsg = useStore((s) => s.toast);
+  const [offline, setOffline] = useState(false);
 
   useEffect(() => {
     void refreshContext();
     connectLive();
     const off = onLive((e) => {
       if (e.type === "nudge" || e.type === "mutation" || e.type === "ritual") void refreshContext();
+      if (e.type === "offline") setOffline(true);
+      if (e.type === "online" || e.type === "hello") { setOffline(false); void refreshContext(); }
     });
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -91,6 +94,7 @@ export function App() {
       <Composer />
       <FocusOverlay />
       {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
+      {offline && <div className="toast" role="status" style={{ background: "var(--danger)", color: "#fff" }}>Kairos server unreachable. Reconnecting…</div>}
       {ctx && !ctx.prefs.onboarded && <Onboarding onDone={() => setState((s) => (s.ctx ? { ctx: { ...s.ctx, prefs: { ...s.ctx.prefs, onboarded: true } } } : {}))} />}
     </div>
   );

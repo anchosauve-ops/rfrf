@@ -107,7 +107,7 @@ export function Composer() {
     }
   };
 
-  useEffect(() => registerCommandHandler((t) => void send(t)), [busy, voice]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => registerCommandHandler((t) => void send(t)), [busy, voice]);
 
   useEffect(() => {
     const cmd = new URLSearchParams(location.search).get("cmd");
@@ -115,7 +115,7 @@ export function Composer() {
       history.replaceState(null, "", location.pathname + location.hash);
       setTimeout(() => void send(cmd), 300);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleMic = () => {
     if (mic) {

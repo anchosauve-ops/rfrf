@@ -73,6 +73,8 @@ let es: EventSource | undefined;
 export function connectLive(): void {
   if (es) return;
   es = new EventSource(`${BASE}/stream`);
+  es.addEventListener("error", () => { for (const l of listeners) l({ type: "offline" }); });
+  es.addEventListener("open", () => { for (const l of listeners) l({ type: "online" }); });
   for (const t of ["hello", "nudge", "mutation", "ritual", "focus"]) {
     es.addEventListener(t, (ev) => {
       let data: LiveEvent = { type: t };

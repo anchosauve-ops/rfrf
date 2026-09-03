@@ -11,21 +11,42 @@ import { Agent } from "./agent/index.js";
 import { Scheduler } from "./scheduler.js";
 import { Bus } from "./bus.js";
 import { dayKey, parseChrono, describeCalibration, type Preferences } from "../core/index.js";
+import { ValidationError, taskPatch, eventPatch, memoryPatch, personPatch, goalPatch, ritualPatch, watcherPatch, prefsPatch } from "./validate.js";
+import { secretKey, seal, open as unseal } from "./secrets.js";
+import { writeBackup, backupDir, lastBackupAt } from "./backup.js";
 
 export interface AppOptions {
   dbPath?: string;
   webDir?: string;
   now?: () => Date;
   apiKey?: () => string | undefined;
+  /** log requests to stdout (default: true outside tests) */
+  log?: boolean;
+  /** max request body in bytes (default 2 MB; import allows 25 MB) */
+  maxBody?: number;
+  backupDir?: string;
 }
 
+const START = Date.now();
+const MAX_BODY = 2 * 1024 * 1024;
+const MAX_IMPORT = 25 * 1024 * 1024;
+
 export function createApp(opts: AppOptions = {}) {
-  const db = openDb(opts.dbPath ?? ":memory:");
+  const dbPath = opts.dbPath ?? ":memory:";
+  const db = openDb(dbPath);
   const repo = new Repo(db);
   repo.ensureDefaults();
   const svc = new Services(repo);
   const bus = new Bus();
-  const agent = new Agent({ svc, now: opts.now, apiKey: opts.apiKey });
+  const key = secretKey(dbPath);
+  const storedApiKey = () => {
+    const raw = repo.getMeta("anthropic_api_key");
+    if (!raw) return undefined;
+    const plain = unseal(raw, key);
+    if (plain && raw === plain) repo.setMeta("anthropic_api_key", seal(plain, key)); // upgrade legacy plaintext
+    return plain || undefined;
+  };
+  const agent = new Agent({ svc, now: opts.now, apiKey: opts.apiKey ?? (() => process.env.ANTHROPIC_API_KEY || storedApiKey()) });
   const scheduler = new Scheduler(svc, bus, opts.now ?? (() => new Date()));
   const now = () => opts.now?.() ?? new Date();
 
@@ -47,21 +68,45 @@ export function createApp(opts: AppOptions = {}) {
     }),
   );
   app.onError((err, c) => {
-    console.error(err);
-    return c.json({ error: err.message }, 500);
+    if (err instanceof ValidationError) return c.json({ error: err.message }, 400);
+    console.error(`[kairos] ${c.req.method} ${c.req.path} failed:`, err);
+    return c.json({ error: "internal error" }, 500);
   });
 
-  const json = async <T>(c: { req: { json: () => Promise<unknown> } }): Promise<T> => {
+  // request log + body limit
+  const shouldLog = opts.log ?? process.env.NODE_ENV !== "test";
+  app.use("/api/*", async (c, next) => {
+    const len = Number(c.req.header("content-length") ?? 0);
+    const limit = c.req.path === "/api/import" ? MAX_IMPORT : (opts.maxBody ?? MAX_BODY);
+    if (len > limit) return c.json({ error: `request body too large (max ${Math.round(limit / 1024)} KB)` }, 413);
+    const t0 = performance.now();
+    await next();
+    if (shouldLog && c.req.path !== "/api/stream") console.log(`[kairos] ${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - t0)}ms`);
+  });
+
+  const json = async <T>(c: { req: { json: () => Promise<unknown>; header: (n: string) => string | undefined } }): Promise<T> => {
     try {
-      return (await c.req.json()) as T;
-    } catch {
+      const v = await c.req.json();
+      if (v === null || typeof v !== "object") throw new ValidationError("body must be a JSON object");
+      return v as T;
+    } catch (e) {
+      if (e instanceof ValidationError) throw e;
       return {} as T;
     }
   };
   const notify = (entity: string) => bus.publish({ type: "mutation", entity });
 
   // ---------- health & context ----------
-  app.get("/api/health", (c) => c.json({ ok: true, mode: agent.mode(), now: now().toISOString() }));
+  app.get("/api/health", (c) =>
+    c.json({
+      ok: true,
+      mode: agent.mode(),
+      now: now().toISOString(),
+      uptimeSec: Math.round((Date.now() - START) / 1000),
+      db: dbPath === ":memory:" ? "memory" : "file",
+      lastBackupAt: dbPath === ":memory:" && !opts.backupDir ? null : (lastBackupAt(backupDir(dbPath, opts.backupDir))?.toISOString() ?? null),
+    }),
+  );
   app.get("/api/context", (c) => {
     const prefs = repo.getPrefs();
     const open = repo.listTasks({ status: "open" });
@@ -87,13 +132,13 @@ export function createApp(opts: AppOptions = {}) {
   // ---------- prefs ----------
   app.get("/api/prefs", (c) => c.json({ ...repo.getPrefs(), hasApiKey: !!agent.apiKey(), apiKeySource: process.env.ANTHROPIC_API_KEY ? "env" : repo.getMeta("anthropic_api_key") ? "settings" : null }));
   app.put("/api/prefs", async (c) => {
-    const body = await json<Partial<Preferences> & { apiKey?: string | null }>(c);
+    const body = prefsPatch(await json<Record<string, unknown>>(c));
     const { apiKey, ...patch } = body;
     if (apiKey !== undefined) {
-      if (apiKey) repo.setMeta("anthropic_api_key", apiKey.trim());
+      if (apiKey) repo.setMeta("anthropic_api_key", seal(apiKey, key));
       else db.prepare("DELETE FROM meta WHERE key = 'anthropic_api_key'").run();
     }
-    const prefs = repo.setPrefs(patch);
+    const prefs = repo.setPrefs(patch as Partial<Preferences>);
     notify("prefs");
     return c.json({ ...prefs, hasApiKey: !!agent.apiKey() });
   });
@@ -108,8 +153,12 @@ export function createApp(opts: AppOptions = {}) {
     return c.json(r.cards?.[0]?.type === "tasks" ? r.cards[0].tasks[0] : null, 201);
   });
   app.patch("/api/tasks/:id", async (c) => {
-    const body = await json<Record<string, unknown>>(c);
-    const t = repo.updateTask(c.req.param("id"), body as never);
+    const body = taskPatch(await json<Record<string, unknown>>(c));
+    const cur = repo.getTask(c.req.param("id"));
+    if (!cur) return c.json({ error: "not found" }, 404);
+    const clears = Object.keys(body).filter((k) => k.startsWith("__clear_")) as `__clear_${"due" | "pinnedStart" | "snoozedUntil"}`[];
+    for (const k of clears) { delete (body as Record<string, unknown>)[k]; (body as Record<string, unknown>)[k.replace("__clear_", "")] = undefined; }
+    const t = repo.updateTask(cur.id, body);
     if (!t) return c.json({ error: "not found" }, 404);
     notify("task");
     return c.json(t);
@@ -140,7 +189,7 @@ export function createApp(opts: AppOptions = {}) {
     return c.json(r.cards?.[0]?.type === "events" ? r.cards[0].events[0] : null, 201);
   });
   app.patch("/api/events/:id", async (c) => {
-    const e = repo.updateEvent(c.req.param("id"), (await json<Record<string, unknown>>(c)) as never);
+    const e = repo.updateEvent(c.req.param("id"), eventPatch(await json<Record<string, unknown>>(c)));
     if (!e) return c.json({ error: "not found" }, 404);
     notify("event");
     return c.json(e);
@@ -167,7 +216,7 @@ export function createApp(opts: AppOptions = {}) {
     return c.json(r.cards?.[0]?.type === "memories" ? r.cards[0].memories[0] : null, 201);
   });
   app.patch("/api/memories/:id", async (c) => {
-    const m = repo.updateMemory(c.req.param("id"), (await json<Record<string, unknown>>(c)) as never);
+    const m = repo.updateMemory(c.req.param("id"), memoryPatch(await json<Record<string, unknown>>(c)));
     if (!m) return c.json({ error: "not found" }, 404);
     notify("memory");
     return c.json(m);
@@ -191,7 +240,7 @@ export function createApp(opts: AppOptions = {}) {
     return c.json(r.cards?.[0]?.type === "people" ? r.cards[0].people[0] : null, 201);
   });
   app.patch("/api/people/:id", async (c) => {
-    const p = repo.updatePerson(c.req.param("id"), (await json<Record<string, unknown>>(c)) as never);
+    const p = repo.updatePerson(c.req.param("id"), personPatch(await json<Record<string, unknown>>(c)));
     if (!p) return c.json({ error: "not found" }, 404);
     notify("person");
     return c.json(p);
@@ -213,8 +262,8 @@ export function createApp(opts: AppOptions = {}) {
   app.put("/api/rituals/:id", async (c) => {
     const cur = repo.listRituals().find((r) => r.id === c.req.param("id"));
     if (!cur) return c.json({ error: "not found" }, 404);
-    const patch = await json<Record<string, unknown>>(c);
-    return c.json(repo.upsertRitual({ ...cur, ...(patch as Partial<typeof cur>) }));
+    const patch = ritualPatch(await json<Record<string, unknown>>(c));
+    return c.json(repo.upsertRitual({ ...cur, ...patch, rule: patch.rule ? { ...cur.rule, ...patch.rule } : cur.rule }));
   });
   app.post("/api/rituals/:id/run", (c) => {
     const r = repo.listRituals().find((x) => x.id === c.req.param("id"));
@@ -225,7 +274,7 @@ export function createApp(opts: AppOptions = {}) {
   app.put("/api/watchers/:id", async (c) => {
     const cur = repo.listWatchers().find((w) => w.id === c.req.param("id"));
     if (!cur) return c.json({ error: "not found" }, 404);
-    return c.json(repo.upsertWatcher({ ...cur, ...((await json<Record<string, unknown>>(c)) as Partial<typeof cur>) }));
+    return c.json(repo.upsertWatcher({ ...cur, ...watcherPatch(await json<Record<string, unknown>>(c)) }));
   });
   app.post("/api/scheduler/tick", (c) => c.json(scheduler.tick()));
   app.get("/api/nudges", (c) => c.json(repo.listNudges({ includeDismissed: c.req.query("all") === "1" })));
@@ -273,7 +322,7 @@ export function createApp(opts: AppOptions = {}) {
     return c.json(r.cards?.[0]?.type === "goals" ? r.cards[0].goals[0] : null, 201);
   });
   app.patch("/api/goals/:id", async (c) => {
-    const g = repo.updateGoal(c.req.param("id"), (await json<Record<string, unknown>>(c)) as never);
+    const g = repo.updateGoal(c.req.param("id"), goalPatch(await json<Record<string, unknown>>(c)));
     if (!g) return c.json({ error: "not found" }, 404);
     notify("goal");
     return c.json(g);
@@ -394,9 +443,14 @@ export function createApp(opts: AppOptions = {}) {
   });
   app.post("/api/import", async (c) => {
     const data = await json<Record<string, unknown>>(c);
+    if (data.version !== undefined && data.version !== 1) return c.json({ error: `unsupported export version ${String(data.version)}` }, 400);
     const r = repo.importAll(data);
     notify("task"); notify("event"); notify("memory"); notify("person");
     return c.json(r);
+  });
+  app.post("/api/backup", (c) => {
+    const path = writeBackup(repo, { dbPath, dir: opts.backupDir }, now());
+    return c.json({ ok: !!path, path: path ?? null });
   });
   app.post("/api/demo", (c) => {
     seedDemo(repo, now());
@@ -414,7 +468,12 @@ export function createApp(opts: AppOptions = {}) {
     });
   }
 
-  return { app, repo, svc, agent, scheduler, bus, db };
+  const backup = () => writeBackup(repo, { dbPath, dir: opts.backupDir }, now());
+  const close = () => {
+    scheduler.stop();
+    try { db.close(); } catch { /* already closed */ }
+  };
+  return { app, repo, svc, agent, scheduler, bus, db, backup, close };
 }
 
 /** A believable first day, so the product is legible in 10 seconds. */
@@ -435,8 +494,8 @@ export function seedDemo(repo: Repo, now: Date): void {
 
   const priya = repo.findPerson("Priya") ?? repo.createPerson({ name: "Priya", relation: "colleague", cadenceDays: 14, notes: "Design lead. Loves systems thinking.", lastContactAt: new Date(now.getTime() - 20 * 86400_000).toISOString() });
   const sam = repo.findPerson("Sam") ?? repo.createPerson({ name: "Sam", relation: "mentor", cadenceDays: 30, lastContactAt: new Date(now.getTime() - 45 * 86400_000).toISOString() });
-  repo.findPerson("Dana") ?? repo.createPerson({ name: "Dana", relation: "friend", cadenceDays: 21, lastContactAt: new Date(now.getTime() - 3 * 86400_000).toISOString() });
-  repo.findPerson("Mom") ?? repo.createPerson({ name: "Mom", relation: "mother", cadenceDays: 7, lastContactAt: new Date(now.getTime() - 9 * 86400_000).toISOString() });
+  if (!repo.findPerson("Dana")) repo.createPerson({ name: "Dana", relation: "friend", cadenceDays: 21, lastContactAt: new Date(now.getTime() - 3 * 86400_000).toISOString() });
+  if (!repo.findPerson("Mom")) repo.createPerson({ name: "Mom", relation: "mother", cadenceDays: 7, lastContactAt: new Date(now.getTime() - 9 * 86400_000).toISOString() });
 
   if (repo.listTasks({ status: "all" }).length === 0) {
     repo.createTask({ title: "Write investor update", energy: "deep", estimateMin: 120, priority: 2, due: L(17, 0, 0), notes: "Q3 numbers, hiring plan, the honest section about churn." });

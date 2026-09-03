@@ -17,7 +17,8 @@ const KAIROS_VERSION = (() => {
 const port = Number(process.env.PORT ?? 8787);
 const hostname = process.env.HOST ?? "127.0.0.1";
 const dbPath = process.env.KAIROS_DB ?? "./data/kairos.db";
-const { app, scheduler, agent } = createApp({ dbPath });
+const { app, scheduler, agent, backup, close } = createApp({ dbPath });
+scheduler.daily.push({ name: "backup", run: () => { const p = backup(); if (p) console.log(`[kairos] backup written: ${p}`); } });
 scheduler.start();
 
 serve({ fetch: app.fetch, port, hostname }, () => {
@@ -29,7 +30,9 @@ serve({ fetch: app.fetch, port, hostname }, () => {
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
-    scheduler.stop();
+    console.log(`\n[kairos] ${sig}: closing`);
+    close();
     process.exit(0);
   });
 }
+process.on("unhandledRejection", (e) => console.error("[kairos] unhandled rejection:", e));
