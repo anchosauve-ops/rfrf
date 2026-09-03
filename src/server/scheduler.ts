@@ -50,6 +50,22 @@ export class Scheduler {
   }
 
   runRitual(r: Ritual, now = this.now()): Nudge {
+    if (r.kind === "reflection") {
+      const added = this.svc.reflect(now);
+      const cal = this.svc.calibration(now);
+      const nudge = this.svc.repo.createNudge({
+        title: "Nightly reflection",
+        body: added.length ? `Learned ${added.length} new thing${added.length === 1 ? "" : "s"} from ${cal.sampleSize} completed tasks.` : `Recomputed what I know from ${cal.sampleSize} completed tasks. Nothing new tonight.`,
+        level: "info",
+        cards: [{ type: "calibration", calibration: cal }],
+        actions: [{ label: "Open the mirror", command: "mirror", style: "primary" }],
+        origin: r.id,
+      });
+      this.svc.repo.upsertRitual({ ...r, lastRunAt: now.toISOString() });
+      this.bus.publish({ type: "ritual", ritualId: r.id });
+      this.bus.publish({ type: "nudge", nudgeId: nudge.id });
+      return nudge;
+    }
     const kind = r.kind === "morning_brief" ? "morning" : r.kind === "evening_review" ? "evening" : r.kind === "weekly_retro" ? "weekly" : "morning";
     if (kind === "morning") this.svc.plan(dayKey(now, this.svc.prefs().timezone), now);
     const brief = this.svc.brief(kind, now);
@@ -138,6 +154,38 @@ export class Scheduler {
           body: "You've got open tasks and an open day. Want me to lay it out?",
           level: "suggest",
           actions: [{ label: "Plan my day", command: "plan my day", style: "primary" }],
+          origin: w.id,
+        };
+      }
+      case "deadline_risk": {
+        const prefs = this.svc.prefs();
+        const report = this.svc.futures(now);
+        const danger = report.risks.filter((r) => r.pMiss >= w.threshold && r.priority <= 2);
+        if (!danger.length) return undefined;
+        const top = danger[0]!;
+        const best = report.interventions[0];
+        // Guardian only ever defers (a reversible scheduling change). Scoping work down is the person's call.
+        const autoMove = report.interventions.find((i) => i.kind === "defer" && i.targetTaskId);
+        if (prefs.autonomy === "guardian" && autoMove && autoMove.targetTaskId) {
+          const entry = this.svc.intervene("defer", autoMove.targetTaskId, `“${top.title}” had a ${Math.round(top.pMiss * 100)}% chance of missing its deadline.`, w.id, now);
+          if (entry) {
+            this.svc.plan(dayKey(now, tz), now);
+            return {
+              title: `Guardian acted: ${entry.summary}`,
+              body: `${entry.reason} This removed about ${Math.round(autoMove.riskDelta * 100)}% of this week's deadline risk. Undo any time.`,
+              level: "act",
+              cards: [{ type: "ledger", entries: [entry] }, { type: "risk", report }],
+              actions: [{ label: "Undo", command: "undo", style: "danger" }, { label: "See futures", command: "what's at risk" }],
+              origin: w.id,
+            };
+          }
+        }
+        return {
+          title: `“${top.title}” is at ${Math.round(top.pMiss * 100)}% risk of slipping`,
+          body: `${report.runs} simulated weeks say it lands ${top.expectedDay}. ${best ? `Best move: ${best.title.toLowerCase()} (−${Math.round(best.riskDelta * 100)}% of risk).` : ""}`.trim(),
+          level: "act",
+          cards: [{ type: "risk", report }],
+          actions: [...(best ? [{ label: best.title, command: best.command, style: "primary" as const }] : []), { label: "Convene the council", command: "convene the council" }],
           origin: w.id,
         };
       }

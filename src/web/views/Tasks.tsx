@@ -140,6 +140,7 @@ function TaskRow({ t, now, tz, reload }: { t: Task; now: Date; tz?: string; relo
           <span>{minutes(t.estimateMin)}</span>
           {t.priority <= 2 && <span className={`badge ${t.priority === 1 ? "danger" : ""}`}>{t.priority === 1 ? "critical" : "important"}</span>}
           {t.recurrence && <span>↻</span>}
+          {t.goalId && <span className="badge">◎ goal</span>}
           {t.tags.map((x) => <span key={x}>#{x}</span>)}
         </div>
         {edit && (

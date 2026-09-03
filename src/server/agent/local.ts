@@ -19,6 +19,7 @@ const HELP = `Here's what I understand without a model:
 - "remember I prefer deep work before noon", "what do you know about my goals", "forget that"
 - "met Priya, colleague from design, every 2 weeks", "talked to Sam", "who should I reach out to"
 - "focus for 50 on the essay", "what's overdue", "my name is Will", "timezone Europe/Berlin"
+- "goal: ship v1 by October", "my goals", "what's at risk", "convene the council", "mirror", "undo"
 Add an Anthropic API key in Settings and I get a lot smarter.`;
 
 function pick<T>(arr: T[], seed: number): T {
@@ -33,7 +34,7 @@ export function splitCompound(message: string, ctx: { now: Date; tz: string; wor
   const tail = m[2]!.trim();
   const t = parseIntent(tail, ctx);
   const h = parseIntent(head, ctx);
-  const standalone = new Set(["list_tasks", "brief", "plan_day", "schedule_view", "people_touch", "recall", "start_focus", "help"]);
+  const standalone = new Set(["list_tasks", "brief", "plan_day", "schedule_view", "people_touch", "recall", "start_focus", "help", "futures", "council", "mirror", "list_goals"]);
   if (t.confidence >= 0.9 && standalone.has(t.intent.type) && h.intent.type !== "chat") return [head, tail];
   return [message];
 }
@@ -155,6 +156,24 @@ async function* runLocalOne(message: string, tools: ToolRegistry, svc: Services,
       break;
     case "set_preference":
       absorb(call("set_preference", { key: i.key, value: i.value }), "");
+      break;
+    case "council":
+      absorb(call("convene_council", { question: i.question }), "The council has met. ");
+      break;
+    case "futures":
+      absorb(call("assess_risk", {}), "");
+      break;
+    case "mirror":
+      absorb(call("show_mirror", {}), "");
+      break;
+    case "undo":
+      absorb(call("undo_last", {}), "");
+      break;
+    case "create_goal":
+      absorb(call("create_goal", { title: i.title, horizon: i.horizon, target_date: i.targetDate }), "");
+      break;
+    case "list_goals":
+      absorb(call("list_goals", {}), "");
       break;
     case "chat": {
       // Not a command. Mine it for memories, then answer honestly.

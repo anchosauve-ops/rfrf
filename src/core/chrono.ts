@@ -89,6 +89,10 @@ function take(w: Work, re: RegExp, fn: (m: RegExpExecArray) => void): boolean {
   return true;
 }
 
+function daysInMonthLocal(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
 function toHour(hRaw: string, mRaw: string | undefined, ampm: string | undefined): { hour: number; minute: number } | null {
   let hour = Number(hRaw);
   const minute = mRaw ? Number(mRaw) : 0;
@@ -192,6 +196,17 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
     if (m[3] && year < 100) year += 2000;
     if (month < 1 || month > 12 || day < 1 || day > 31) return;
     if (!m[3] && (month < nowP.month || (month === nowP.month && day < nowP.day))) year += 1;
+    w.dayBase = fromZoned({ year, month, day }, tz);
+  }) ||
+  take(w, new RegExp(`\\b(?:(next|this|in|by|until|before)\\s+)?(${MONTH_RE})\\b(?!\\s*\\d)`, "i"), (m) => {
+    const mod = (m[1] ?? "").toLowerCase();
+    if (["by", "until", "before"].includes(mod)) w.isDeadline = true;
+    const month = MONTHS[(m[2] ?? "").toLowerCase()];
+    if (!month) return;
+    let year = nowP.year;
+    if (month < nowP.month || (month === nowP.month && mod === "next")) year += 1;
+    if (mod === "next" && month > nowP.month) year += 0; // "next april" said in September means the coming April
+    const day = w.isDeadline ? daysInMonthLocal(year, month) : 1;
     w.dayBase = fromZoned({ year, month, day }, tz);
   }) ||
   take(w, /\b(?:on\s+|by\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)\b/i, (m) => {

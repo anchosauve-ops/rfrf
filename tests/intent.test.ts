@@ -80,8 +80,17 @@ describe("intent: commands", () => {
 describe("intent: memory and people", () => {
   it("remember that … → preference", () => expect(P("remember that I prefer deep work before noon")).toMatchObject({ type: "remember", kind: "preference", text: "I prefer deep work before noon" }));
   it("remember to … is a task, not a memory", () => expect(P("remember to buy milk").type).toBe("create_task"));
-  it("goal phrasing", () => expect(P("my goal is to ship v1 by october")).toMatchObject({ type: "remember", kind: "goal" }));
-  it("recall / forget", () => {
+  it("goal phrasing becomes a goal, not just a memory", () => {
+    const r = parseIntent("my goal this quarter is to ship v1", ctx);
+    expect(r.intent).toMatchObject({ type: "create_goal", horizon: "quarter" });
+    expect((r.intent as { title: string }).title).toMatch(/ship v1/i);
+    expect(parseIntent("goal: run a marathon by next april", ctx).intent).toMatchObject({ type: "create_goal", horizon: "year" });
+    expect(parseIntent("convene the council", ctx).intent.type).toBe("council");
+    expect(parseIntent("what's at risk", ctx).intent.type).toBe("futures");
+    expect(parseIntent("what have you learned about me", ctx).intent.type).toBe("mirror");
+    expect(parseIntent("undo that", ctx).intent.type).toBe("undo");
+  });
+  it("recall and forget", () => {
     expect(P("what do you know about my goals")).toMatchObject({ type: "recall", query: "my goals" });
     expect(P("forget that I like tea")).toMatchObject({ type: "forget", query: "i like tea" });
   });

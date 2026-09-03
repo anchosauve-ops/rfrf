@@ -12,11 +12,15 @@ import { MemoryView } from "./views/Memory";
 import { PeopleView } from "./views/People";
 import { RitualsView } from "./views/Rituals";
 import { SettingsView } from "./views/Settings";
+import { FuturesView } from "./views/Futures";
+import { MirrorView } from "./views/Mirror";
 
 const NAV = [
   { key: "now", label: "Now", icon: I.now },
   { key: "day", label: "Day", icon: I.day },
   { key: "tasks", label: "Tasks", icon: I.tasks },
+  { key: "futures", label: "Futures", icon: I.futures },
+  { key: "mirror", label: "Mirror", icon: I.mirror },
   { key: "memory", label: "Memory", icon: I.memory },
   { key: "people", label: "People", icon: I.people },
   { key: "rituals", label: "Rituals", icon: I.rituals },
@@ -57,7 +61,7 @@ export function App() {
   }, [ctx?.prefs.theme]);
 
   const unread = ctx?.counts.unreadNudges ?? 0;
-  const Page = { now: NowView, day: DayView, tasks: TasksView, memory: MemoryView, people: PeopleView, rituals: RitualsView, settings: SettingsView }[view] ?? NowView;
+  const Page = { now: NowView, day: DayView, tasks: TasksView, futures: FuturesView, mirror: MirrorView, memory: MemoryView, people: PeopleView, rituals: RitualsView, settings: SettingsView }[view] ?? NowView;
 
   return (
     <div className="shell">
@@ -78,7 +82,7 @@ export function App() {
         ))}
         <div className="rail-foot">
           <span><span className="kbd">⌘K</span> talk to Kairos</span>
-          <span><span className="kbd">1–7</span> switch views</span>
+          <span><span className="kbd">1–9</span> switch views</span>
         </div>
       </nav>
       <main className="main">

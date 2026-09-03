@@ -7,7 +7,10 @@ import {
   DEFAULT_PREFERENCES,
   uid,
   type Event,
+  type Goal,
+  type LedgerEntry,
   type Memory,
+  type Outcome,
   type Nudge,
   type Person,
   type Plan,
@@ -69,6 +72,7 @@ export class Repo {
       plannedEnd: s(r.planned_end),
       snoozedUntil: s(r.snoozed_until),
       project: s(r.project),
+      goalId: s(r.goal_id),
       tags: pj<string[]>(r.tags, []),
       peopleIds: pj<string[]>(r.people_ids, []),
       recurrence: pj<Task["recurrence"]>(r.recurrence, undefined),
@@ -105,6 +109,7 @@ export class Repo {
       plannedEnd: input.plannedEnd,
       snoozedUntil: input.snoozedUntil,
       project: input.project,
+      goalId: input.goalId,
       tags: input.tags ?? [],
       peopleIds: input.peopleIds ?? [],
       recurrence: input.recurrence,
@@ -115,10 +120,10 @@ export class Repo {
     };
     this.db
       .prepare(
-        `INSERT INTO tasks(id,title,notes,status,priority,energy,estimate_min,due,pinned_start,planned_start,planned_end,snoozed_until,project,tags,people_ids,recurrence,source,created_at,updated_at,completed_at)
-         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO tasks(id,title,notes,status,priority,energy,estimate_min,due,pinned_start,planned_start,planned_end,snoozed_until,project,goal_id,tags,people_ids,recurrence,source,created_at,updated_at,completed_at)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(t.id, t.title, t.notes ?? null, t.status, t.priority, t.energy, t.estimateMin, t.due ?? null, t.pinnedStart ?? null, t.plannedStart ?? null, t.plannedEnd ?? null, t.snoozedUntil ?? null, t.project ?? null, JSON.stringify(t.tags), JSON.stringify(t.peopleIds), j(t.recurrence), t.source, t.createdAt, t.updatedAt, t.completedAt ?? null);
+      .run(t.id, t.title, t.notes ?? null, t.status, t.priority, t.energy, t.estimateMin, t.due ?? null, t.pinnedStart ?? null, t.plannedStart ?? null, t.plannedEnd ?? null, t.snoozedUntil ?? null, t.project ?? null, t.goalId ?? null, JSON.stringify(t.tags), JSON.stringify(t.peopleIds), j(t.recurrence), t.source, t.createdAt, t.updatedAt, t.completedAt ?? null);
     return t;
   }
   updateTask(id: string, patch: Partial<Task>): Task | undefined {
@@ -129,9 +134,9 @@ export class Repo {
     if (patch.status === "open") next.completedAt = undefined;
     this.db
       .prepare(
-        `UPDATE tasks SET title=?,notes=?,status=?,priority=?,energy=?,estimate_min=?,due=?,pinned_start=?,planned_start=?,planned_end=?,snoozed_until=?,project=?,tags=?,people_ids=?,recurrence=?,source=?,updated_at=?,completed_at=? WHERE id=?`,
+        `UPDATE tasks SET title=?,notes=?,status=?,priority=?,energy=?,estimate_min=?,due=?,pinned_start=?,planned_start=?,planned_end=?,snoozed_until=?,project=?,goal_id=?,tags=?,people_ids=?,recurrence=?,source=?,updated_at=?,completed_at=? WHERE id=?`,
       )
-      .run(next.title, next.notes ?? null, next.status, next.priority, next.energy, next.estimateMin, next.due ?? null, next.pinnedStart ?? null, next.plannedStart ?? null, next.plannedEnd ?? null, next.snoozedUntil ?? null, next.project ?? null, JSON.stringify(next.tags), JSON.stringify(next.peopleIds), j(next.recurrence), next.source, next.updatedAt, next.completedAt ?? null, id);
+      .run(next.title, next.notes ?? null, next.status, next.priority, next.energy, next.estimateMin, next.due ?? null, next.pinnedStart ?? null, next.plannedStart ?? null, next.plannedEnd ?? null, next.snoozedUntil ?? null, next.project ?? null, next.goalId ?? null, JSON.stringify(next.tags), JSON.stringify(next.peopleIds), j(next.recurrence), next.source, next.updatedAt, next.completedAt ?? null, id);
     return next;
   }
   deleteTask(id: string): boolean {
@@ -478,6 +483,87 @@ export class Repo {
     return Number(r.m);
   }
 
+  // ---------- goals ----------
+  private rowToGoal(r: Row): Goal {
+    return { id: String(r.id), title: String(r.title), why: s(r.why), horizon: r.horizon as Goal["horizon"], targetDate: s(r.target_date), progress: Number(r.progress), status: r.status as Goal["status"], pinned: !!r.pinned, createdAt: String(r.created_at), updatedAt: String(r.updated_at) };
+  }
+  listGoals(includeDone = false): Goal[] {
+    const rows = includeDone
+      ? (this.db.prepare("SELECT * FROM goals ORDER BY pinned DESC, created_at ASC").all() as Row[])
+      : (this.db.prepare("SELECT * FROM goals WHERE status = 'active' ORDER BY pinned DESC, created_at ASC").all() as Row[]);
+    return rows.map((r) => this.rowToGoal(r));
+  }
+  getGoal(id: string): Goal | undefined {
+    const r = this.db.prepare("SELECT * FROM goals WHERE id = ?").get(id) as Row | undefined;
+    return r ? this.rowToGoal(r) : undefined;
+  }
+  findGoal(query: string): Goal | undefined {
+    const q = query.toLowerCase().trim();
+    const goals = this.listGoals(true);
+    return goals.find((g) => g.title.toLowerCase() === q) ?? goals.find((g) => g.title.toLowerCase().includes(q) || q.includes(g.title.toLowerCase()));
+  }
+  createGoal(input: Partial<Goal> & { title: string }): Goal {
+    const g: Goal = { id: input.id ?? uid("gol"), title: input.title.trim(), why: input.why, horizon: input.horizon ?? "month", targetDate: input.targetDate, progress: input.progress ?? 0, status: input.status ?? "active", pinned: input.pinned ?? false, createdAt: input.createdAt ?? nowIso(), updatedAt: nowIso() };
+    this.db.prepare(`INSERT INTO goals(id,title,why,horizon,target_date,progress,status,pinned,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`).run(g.id, g.title, g.why ?? null, g.horizon, g.targetDate ?? null, g.progress, g.status, g.pinned ? 1 : 0, g.createdAt, g.updatedAt);
+    return g;
+  }
+  updateGoal(id: string, patch: Partial<Goal>): Goal | undefined {
+    const cur = this.getGoal(id);
+    if (!cur) return undefined;
+    const next: Goal = { ...cur, ...patch, id, updatedAt: nowIso() };
+    this.db.prepare(`UPDATE goals SET title=?,why=?,horizon=?,target_date=?,progress=?,status=?,pinned=?,updated_at=? WHERE id=?`).run(next.title, next.why ?? null, next.horizon, next.targetDate ?? null, next.progress, next.status, next.pinned ? 1 : 0, next.updatedAt, id);
+    return next;
+  }
+  deleteGoal(id: string): boolean {
+    this.db.prepare("UPDATE tasks SET goal_id = NULL WHERE goal_id = ?").run(id);
+    return (this.db.prepare("DELETE FROM goals WHERE id = ?").run(id).changes ?? 0) > 0;
+  }
+
+  // ---------- outcomes ----------
+  addOutcome(o: Omit<Outcome, "id">): Outcome {
+    const out: Outcome = { ...o, id: uid("out") };
+    this.db
+      .prepare(`INSERT INTO outcomes(id,task_id,title,energy,tags,goal_id,estimate_min,actual_min,planned_start,completed_at,hour,weekday,slipped,on_plan) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(out.id, out.taskId, out.title, out.energy, JSON.stringify(out.tags), out.goalId ?? null, out.estimateMin, out.actualMin ?? null, out.plannedStart ?? null, out.completedAt, out.hour, out.weekday, out.slipped ? 1 : 0, out.onPlan === undefined ? null : out.onPlan ? 1 : 0);
+    return out;
+  }
+  listOutcomes(sinceIso?: string, limit = 2000): Outcome[] {
+    const rows = sinceIso
+      ? (this.db.prepare("SELECT * FROM outcomes WHERE completed_at >= ? ORDER BY completed_at DESC LIMIT ?").all(sinceIso, limit) as Row[])
+      : (this.db.prepare("SELECT * FROM outcomes ORDER BY completed_at DESC LIMIT ?").all(limit) as Row[]);
+    return rows.map((r) => ({
+      id: String(r.id), taskId: String(r.task_id), title: String(r.title), energy: r.energy as Outcome["energy"], tags: pj<string[]>(r.tags, []), goalId: s(r.goal_id),
+      estimateMin: Number(r.estimate_min), actualMin: r.actual_min === null ? undefined : Number(r.actual_min), plannedStart: s(r.planned_start), completedAt: String(r.completed_at),
+      hour: Number(r.hour), weekday: Number(r.weekday), slipped: !!r.slipped, onPlan: r.on_plan === null ? undefined : !!r.on_plan,
+    }));
+  }
+  /** Minutes of completed focus sessions attributed to a task. */
+  focusMinutesForTask(taskId: string): number {
+    const r = this.db.prepare("SELECT COALESCE(SUM(minutes),0) AS m FROM focus_sessions WHERE task_id = ? AND ended_at IS NOT NULL AND outcome = 'completed'").get(taskId) as { m: number };
+    return Number(r.m);
+  }
+  deleteOutcomesForTask(taskId: string): void {
+    this.db.prepare("DELETE FROM outcomes WHERE task_id = ?").run(taskId);
+  }
+
+  // ---------- ledger ----------
+  addLedger(e: Omit<LedgerEntry, "id" | "createdAt">): LedgerEntry {
+    const entry: LedgerEntry = { ...e, id: uid("led"), createdAt: nowIso() };
+    this.db.prepare(`INSERT INTO ledger(id,action,summary,reason,undo,origin,created_at) VALUES(?,?,?,?,?,?,?)`).run(entry.id, entry.action, entry.summary, entry.reason, JSON.stringify(entry.undo), entry.origin, entry.createdAt);
+    return entry;
+  }
+  listLedger(limit = 50): LedgerEntry[] {
+    return (this.db.prepare("SELECT * FROM ledger ORDER BY created_at DESC LIMIT ?").all(limit) as Row[]).map((r) => ({
+      id: String(r.id), action: String(r.action), summary: String(r.summary), reason: String(r.reason), undo: pj<LedgerEntry["undo"]>(r.undo, []), origin: String(r.origin), createdAt: String(r.created_at), undoneAt: s(r.undone_at),
+    }));
+  }
+  getLedger(id: string): LedgerEntry | undefined {
+    return this.listLedger(500).find((e) => e.id === id);
+  }
+  markUndone(id: string): void {
+    this.db.prepare("UPDATE ledger SET undone_at = ? WHERE id = ?").run(nowIso(), id);
+  }
+
   // ---------- export / import ----------
   exportAll(): Record<string, unknown> {
     return {
@@ -491,6 +577,9 @@ export class Repo {
       rituals: this.listRituals(),
       watchers: this.listWatchers(),
       nudges: this.listNudges({ includeDismissed: true, limit: 500 }),
+      goals: this.listGoals(true),
+      outcomes: this.listOutcomes(),
+      ledger: this.listLedger(500),
     };
   }
   importAll(data: Record<string, unknown>): { imported: Record<string, number> } {
@@ -503,6 +592,9 @@ export class Repo {
       for (const e of arr<Event>("events")) if (!this.getEvent(e.id)) { this.createEvent({ ...e, source: "import" }); counts.events = (counts.events ?? 0) + 1; }
       for (const m of arr<Memory>("memories")) if (!this.getMemory(m.id)) { this.createMemory({ ...m, source: m.source ?? "imported" }); counts.memories = (counts.memories ?? 0) + 1; }
       for (const p of arr<Person>("people")) if (!this.getPerson(p.id)) { this.createPerson(p); counts.people = (counts.people ?? 0) + 1; }
+      for (const g of arr<Goal>("goals")) if (!this.getGoal(g.id)) { this.createGoal(g); counts.goals = (counts.goals ?? 0) + 1; }
+      const haveOutcomes = new Set(this.listOutcomes().map((o) => o.taskId + o.completedAt));
+      for (const o of arr<Outcome>("outcomes")) if (!haveOutcomes.has(o.taskId + o.completedAt)) { this.addOutcome(o); counts.outcomes = (counts.outcomes ?? 0) + 1; }
       for (const r of arr<Ritual>("rituals")) { this.upsertRitual(r); counts.rituals = (counts.rituals ?? 0) + 1; }
       for (const w of arr<Watcher>("watchers")) { this.upsertWatcher(w); counts.watchers = (counts.watchers ?? 0) + 1; }
       this.db.exec("COMMIT");
@@ -527,5 +619,7 @@ export class Repo {
       this.upsertWatcher({ id: "wat_deadline", kind: "deadline_approaching", name: "Deadline approaching", threshold: 48, cooldownMin: 12 * 60 });
       this.upsertWatcher({ id: "wat_unplanned", kind: "unplanned_day", name: "Unplanned day", threshold: 0, cooldownMin: 24 * 60 });
     }
+    if (!this.listWatchers().some((w) => w.kind === "deadline_risk")) this.upsertWatcher({ id: "wat_risk", kind: "deadline_risk", name: "Guardian: deadline at risk", threshold: 0.5, cooldownMin: 6 * 60 });
+    if (!this.listRituals().some((r) => r.kind === "reflection")) this.upsertRitual({ id: "rit_reflect", name: "Nightly reflection", kind: "reflection", rule: { freq: "daily", time: "23:30" } });
   }
 }

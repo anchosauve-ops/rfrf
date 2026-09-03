@@ -18,7 +18,7 @@ interface LiveTurn {
   error?: string;
 }
 
-const SUGGESTIONS = ["plan my day", "what's on today", "what's overdue", "who should I reach out to", "evening review"];
+const SUGGESTIONS = ["plan my day", "what's at risk", "convene the council", "what have you learned about me", "who should I reach out to"];
 
 export function Composer() {
   const [text, setText] = useState("");

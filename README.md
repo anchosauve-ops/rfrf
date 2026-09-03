@@ -4,7 +4,7 @@
 
 <h1 align="center">Kairos</h1>
 
-<p align="center"><em>A proactive personal agent that runs your day.<br/>Your time, your memory, your people — planned, remembered, and nudged by something that never forgets.</em></p>
+<p align="center"><em>A symbiotic personal intelligence.<br/>It runs your day, learns from every outcome, simulates your futures, deliberates before it advises, and shows you what it has learned about you.</em></p>
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
@@ -23,6 +23,25 @@
 In five years the app most people open first every morning won't be a chat window or a to-do list. It'll be an **agent-first layer over your time**: one surface that knows your calendar, your commitments, your energy, and the people who matter, and that acts on them, on a schedule, without being asked.
 
 Kairos is my version of that layer, built today. It is local-first, works with no model at all, and gets sharper the moment you give it one.
+
+## Symbiosis
+
+Most "AI assistants" are the same on day 300 as on day 1. Kairos is built around a loop that closes:
+
+| Engine | What it does | Where you see it |
+|---|---|---|
+| **Learning** | Every completion becomes an outcome record. Kairos fits your estimate bias per kind of work, your real productive hours, plan adherence and slip rates, with priors that behave at 5 samples and at 5,000. The planner uses the learned model. | Mirror · plan blocks say “~90m by your history” |
+| **Futures** | A seeded Monte Carlo over the coming days: calibrated durations, calendar capacity, interruption noise. Each deadline gets a probability of slipping; interventions are ranked by risk removed. | Futures · nudges · the realist on the council |
+| **Council** | Strategist, realist, guardian, connector and editor each critique the week with evidence, then one synthesis and one decision. Deterministic critics offline; five parallel Claude perspectives plus a chair when a key is present. | Futures · `convene the council` |
+| **Guardian + Ledger** | In Guardian mode Kairos defers low-priority work when a real deadline is at risk. Every autonomous action is logged with its reason and is one click to undo. It never scopes your work down for you. | Mirror · nudges |
+| **Goals** | Goals the planner aligns to (goal-linked tasks get a bonus), with progress against elapsed time and a weekly focus share. | Futures · Tasks |
+| **Reflection** | A nightly ritual turns what was learned into insight memories, so the model, the brief and the Mirror share one truth. | Memory · Rituals |
+
+You control every part of it: calibration on or off, curve auto-tuning on or off, autonomy from “ask” to “guardian”. The Mirror is the product's conscience.
+
+| Futures | Mirror |
+|---|---|
+| ![Futures](docs/screenshots/futures.png) | ![Mirror](docs/screenshots/mirror.png) |
 
 ## What it does
 
@@ -96,6 +115,9 @@ what do you know about my goals     forget that
 met Priya, colleague from design, every 2 weeks
 talked to Sam                       who should I reach out to
 focus for 50 on the essay           evening review
+goal: ship v1 by October            my goals
+what's at risk                      convene the council
+what have you learned about me      undo
 ```
 
 Keyboard: `⌘K` or `/` focuses the command bar, `1–7` switch views, `Esc` collapses the thread.
@@ -104,7 +126,7 @@ Keyboard: `⌘K` or `/` focuses the command bar, `1–7` switch views, `Esc` col
 
 ```bash
 pnpm dev        # both servers with hot reload
-pnpm test       # 92 tests across parser, planner, memory, rrule, brief, server, scheduler
+pnpm test       # 113 tests: parser, planner, memory, learning, futures, council, goals, server, scheduler
 pnpm typecheck  # web + server
 pnpm build      # web bundle + server transpile
 pnpm check      # all of the above
@@ -118,6 +140,11 @@ Everything the UI does goes through `/api`. Highlights:
 - `POST /api/agent/sync` — same, buffered, for scripts and voice assistants
 - `GET /api/plan?date=YYYY-MM-DD` · `POST /api/plan` — read or rebuild a day plan
 - `GET /api/brief?kind=morning|evening|weekly`
+- `GET /api/futures?days=7` — simulated risk report with interventions
+- `POST /api/council` — deliberation (Claude perspectives or local critics)
+- `GET /api/mirror` · `POST /api/mirror/adopt-curve` — the learned model and what to do with it
+- `GET /api/ledger` · `POST /api/ledger/:id/undo` — autonomous actions, reversible
+- CRUD on `/api/goals`
 - `GET /api/stream` — live channel: nudges, rituals, mutations
 - CRUD on `/api/tasks`, `/api/events`, `/api/memories`, `/api/people`, `/api/rituals`, `/api/watchers`, `/api/nudges`
 - `GET /api/export` · `POST /api/import`
@@ -125,9 +152,10 @@ Everything the UI does goes through `/api`. Highlights:
 ## Project shape
 
 ```
-src/core     pure domain: types, chrono, intent, planner, memory, brief, rrule, cards
+src/core     pure domain: types, chrono, intent, planner, memory, brief, rrule, cards,
+             learning, simulate, council, goals
 src/server   Hono + node:sqlite; repo, services, tools, two brains, scheduler, SSE
-src/web      React + Vite PWA; design system, command bar, seven views
+src/web      React + Vite PWA; design system, command bar, nine views
 tests        vitest
 docs         vision, architecture, screenshots
 ```

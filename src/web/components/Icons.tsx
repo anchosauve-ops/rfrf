@@ -19,5 +19,7 @@ export const I = {
   play: (p: SVGProps<SVGSVGElement>) => <svg {...P(p)}><path d="M7 5v14l12-7z" /></svg>,
   spark: (p: SVGProps<SVGSVGElement>) => <svg {...P(p)}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" /></svg>,
   chevron: (p: SVGProps<SVGSVGElement>) => <svg {...P(p)}><path d="M6 9l6 6 6-6" /></svg>,
+  futures: (p: SVGProps<SVGSVGElement>) => <svg {...P(p)}><path d="M3 17l5-6 4 3 5-8 4 5" /><path d="M3 21h18" /></svg>,
+  mirror: (p: SVGProps<SVGSVGElement>) => <svg {...P(p)}><ellipse cx="12" cy="10" rx="6" ry="7" /><path d="M12 17v4M8 21h8M9 8c1-2 3-3 5-2" /></svg>,
   trash: (p: SVGProps<SVGSVGElement>) => <svg {...P(p)}><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>,
 };

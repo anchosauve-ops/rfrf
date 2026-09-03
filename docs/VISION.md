@@ -17,6 +17,18 @@ The agent-first shift moves that integration layer out of the head and into soft
 
 That layer is what people will open first each morning. Not because it's magical, but because it's where their day already is.
 
+## Symbiosis, not service
+
+The second iteration changed the question from "how do I serve this person today?" to "how do we get better together?"
+
+A symbiotic system has three properties a service doesn't:
+
+1. **It learns from consequences, not just instructions.** Every task you finish teaches Kairos something measurable: how long your kind of work really takes, when you actually do it, what slips. The plan you get in month three is not the plan you got in week one.
+2. **It reasons ahead of you, and shows its work.** Futures is a simulator, not a vibe. Two hundred simulated weeks, a probability per deadline, and interventions ranked by how much risk they remove. The council is disagreement made visible: five charters, evidence per claim, then one decision.
+3. **It acts within a contract you can see and reverse.** Guardian mode moves low-priority work when a real deadline is at risk, writes what it did and why to a ledger, and gives you an Undo. It never quietly shrinks your ambitions; scoping down is your call.
+
+And the symbiosis runs both ways: the Mirror teaches *you*. Most people have never seen their own estimate bias as a number, or the hours where their deep work actually lands. The first time that view surprises you is the moment the product stops being software.
+
 ## What Kairos does differently
 
 **Agent-first, not chat-first.** Chat is one input among several. The primary surface is the day itself: what's now, what's next, what slipped, who's drifting. The agent manifests as cards and nudges inside that surface, not as a separate window you have to go visit.

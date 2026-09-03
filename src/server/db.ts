@@ -51,6 +51,24 @@ const MIGRATIONS: string[] = [
     id TEXT PRIMARY KEY, task_id TEXT, title TEXT NOT NULL, minutes INTEGER NOT NULL, started_at TEXT NOT NULL, ended_at TEXT, outcome TEXT
   );
   `,
+  `
+  ALTER TABLE tasks ADD COLUMN goal_id TEXT;
+  CREATE TABLE IF NOT EXISTS goals (
+    id TEXT PRIMARY KEY, title TEXT NOT NULL, why TEXT, horizon TEXT NOT NULL, target_date TEXT,
+    progress REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', pinned INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS outcomes (
+    id TEXT PRIMARY KEY, task_id TEXT NOT NULL, title TEXT NOT NULL, energy TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]',
+    goal_id TEXT, estimate_min INTEGER NOT NULL, actual_min INTEGER, planned_start TEXT, completed_at TEXT NOT NULL,
+    hour INTEGER NOT NULL, weekday INTEGER NOT NULL, slipped INTEGER NOT NULL, on_plan INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_outcomes_completed ON outcomes(completed_at);
+  CREATE TABLE IF NOT EXISTS ledger (
+    id TEXT PRIMARY KEY, action TEXT NOT NULL, summary TEXT NOT NULL, reason TEXT NOT NULL, undo TEXT NOT NULL,
+    origin TEXT NOT NULL, created_at TEXT NOT NULL, undone_at TEXT
+  );
+  `,
 ];
 
 export function openDb(path: string): DB {

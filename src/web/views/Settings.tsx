@@ -57,7 +57,7 @@ export function SettingsView() {
           <button className="btn primary sm" disabled={!key.trim()} onClick={() => { void save({ apiKey: key.trim() }); setKey(""); }}>Save key</button>
           {p.hasApiKey && p.apiKeySource === "settings" && <button className="btn sm danger" onClick={() => void save({ apiKey: null })}>Remove key</button>}
           <label className="row" style={{ gap: 8, marginLeft: "auto" }}><span className="small muted">Autonomy</span>
-            <select className="select" style={{ width: 160 }} value={p.autonomy} onChange={(e) => void save({ autonomy: e.target.value as Preferences["autonomy"] })}><option value="act">act, then tell me</option><option value="ask">ask before destructive</option></select>
+            <select className="select" style={{ width: 160 }} value={p.autonomy} onChange={(e) => void save({ autonomy: e.target.value as Preferences["autonomy"] })}><option value="act">act, then tell me</option><option value="ask">ask before destructive</option><option value="guardian">guardian: intervene on risk</option></select>
           </label>
         </div>
       </div>

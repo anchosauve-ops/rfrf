@@ -3,7 +3,8 @@ import type { Services } from "../services.js";
 import { buildTools } from "./tools.js";
 import { runLocal } from "./local.js";
 import { runClaude } from "./claude.js";
-import type { AgentEvent } from "../../core/index.js";
+import { claudeCouncil } from "./council.js";
+import type { AgentEvent, CouncilVerdict } from "../../core/index.js";
 
 export interface AgentDeps {
   svc: Services;
@@ -25,6 +26,21 @@ export class Agent {
 
   mode(): AgentMode {
     return this.apiKey() ? "claude" : "local";
+  }
+
+  /** Council: Claude perspectives when a key exists, deterministic critics otherwise. Never throws. */
+  async council(question?: string): Promise<CouncilVerdict> {
+    const now = this.deps.now?.() ?? new Date();
+    const key = this.apiKey();
+    if (key) {
+      try {
+        return await claudeCouncil(new Anthropic({ apiKey: key }), this.deps.svc.prefs().model, this.deps.svc, now, question);
+      } catch (e) {
+        const local = this.deps.svc.localCouncil(now, question);
+        return { ...local, synthesis: `${local.synthesis} (Model council unavailable: ${e instanceof Anthropic.APIError ? `API ${e.status}` : "error"}; this is the local council.)` };
+      }
+    }
+    return this.deps.svc.localCouncil(now, question);
   }
 
   async *run(message: string, conversationId: string): AsyncGenerator<AgentEvent> {

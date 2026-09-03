@@ -4,6 +4,7 @@ import { fmtTime, fmtDay, minutes, relDay } from "../lib/time";
 import { runCommand, setState, useStore } from "../lib/store";
 import { api, emitLocal } from "../lib/api";
 import { I } from "./Icons";
+import { CalibrationCard, CouncilCard, GoalsCard, LedgerCard, RiskCard } from "./SymbiosisCards";
 
 export function EnergyDot({ e }: { e?: string }) {
   return e ? <i className={`dot ${e}`} title={e} /> : null;
@@ -176,6 +177,16 @@ export function CardView({ card, now }: { card: Card; now: Date }) {
           <button className="btn sm primary" onClick={() => runCommand(card.command)}>Confirm</button>
         </div>
       );
+    case "risk":
+      return <RiskCard report={card.report} compact />;
+    case "council":
+      return <CouncilCard verdict={card.verdict} />;
+    case "calibration":
+      return <CalibrationCard calibration={card.calibration} />;
+    case "goals":
+      return <GoalsCard goals={card.goals} alignment={card.alignment} />;
+    case "ledger":
+      return <LedgerCard entries={card.entries} />;
     case "focus":
       return (
         <div className="acard focus-card">

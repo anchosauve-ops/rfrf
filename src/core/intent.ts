@@ -48,6 +48,12 @@ export type Intent =
   | { type: "start_focus"; minutes: number; query?: string }
   | { type: "schedule_view"; date: string }
   | { type: "set_preference"; key: string; value: string }
+  | { type: "council"; question?: string }
+  | { type: "futures" }
+  | { type: "mirror" }
+  | { type: "undo" }
+  | { type: "create_goal"; title: string; horizon: "week" | "month" | "quarter" | "year"; targetDate?: string }
+  | { type: "list_goals" }
   | { type: "help" }
   | { type: "chat"; text: string };
 
@@ -170,6 +176,30 @@ export function parseIntent(raw: string, ctx: IntentContext): ParsedIntent {
     return { intent: { type: "brief", kind: "evening" }, confidence: 0.95, trace: ["brief:evening"] };
   if (/^(?:weekly\s+(?:review|retro|brief)|retro|how\s+was\s+(?:my|the)\s+week|week\s+in\s+review)$/i.test(lower))
     return { intent: { type: "brief", kind: "weekly" }, confidence: 0.95, trace: ["brief:weekly"] };
+
+  // ---------- Symbiosis: council, futures, mirror, goals, undo ----------
+  if (/^(?:convene\s+(?:the\s+)?council|council|deliberate|second\s+opinions?|what\s+would\s+the\s+council\s+say|challenge\s+(?:my|this)\s+(?:plan|week|day)|critique\s+(?:my|this)\s+(?:plan|week|day))(?:\s+(?:on|about)\s+(.+))?$/i.test(lower)) {
+    const q = /(?:on|about)\s+(.+)$/i.exec(lower)?.[1];
+    return { intent: { type: "council", question: q }, confidence: 0.95, trace: ["council"] };
+  }
+  if (/^(?:futures?|risks?|what'?s\s+at\s+risk|what\s+will\s+slip|simulate\s+(?:my\s+)?(?:week|futures?)|will\s+i\s+make\s+(?:my|the)\s+deadlines?|how'?s\s+(?:my|the)\s+week\s+look(?:ing)?|forecast|outlook)\??$/i.test(lower))
+    return { intent: { type: "futures" }, confidence: 0.95, trace: ["futures"] };
+  if (/^(?:mirror|what\s+have\s+you\s+learned(?:\s+about\s+me)?|show\s+(?:my\s+)?(?:calibration|patterns|mirror)|how\s+accurate\s+are\s+my\s+estimates|how\s+am\s+i\s+doing)\??$/i.test(lower))
+    return { intent: { type: "mirror" }, confidence: 0.95, trace: ["mirror"] };
+  if (/^(?:undo|undo\s+(?:that|last|the\s+last\s+(?:thing|action|change))|revert(?:\s+that)?|put\s+it\s+back)$/i.test(lower))
+    return { intent: { type: "undo" }, confidence: 0.95, trace: ["undo"] };
+  if (/^(?:(?:show\s+)?(?:my\s+)?goals|what\s+are\s+my\s+goals|list\s+goals)\??$/i.test(lower))
+    return { intent: { type: "list_goals" }, confidence: 0.95, trace: ["list_goals"] };
+  {
+    const g = /^(?:(?:new|add|set|create)\s+)?goal\s*[:\-]?\s+(.+)$/i.exec(text) ?? /^(?:this\s+(week|month|quarter|year)\s+i\s+want\s+to|my\s+goal\s+(?:this\s+(week|month|quarter|year)\s+)?is\s+to)\s+(.+)$/i.exec(text);
+    if (g) {
+      const body = stripEdges(g[g.length - 1] ?? "");
+      const c = parseChrono(body, { now: ctx.now, tz: ctx.tz });
+      const hz = /\b(week|month|quarter|year)\b/i.exec(text)?.[1]?.toLowerCase() as "week" | "month" | "quarter" | "year" | undefined;
+      const horizon = hz ?? (c.start ? (c.start.getTime() - ctx.now.getTime() < 10 * 86400000 ? "week" : c.start.getTime() - ctx.now.getTime() < 45 * 86400000 ? "month" : c.start.getTime() - ctx.now.getTime() < 120 * 86400000 ? "quarter" : "year") : "month");
+      return { intent: { type: "create_goal", title: capitalize(c.remainder || body), horizon, targetDate: c.start?.toISOString() }, confidence: 0.9, trace: ["create_goal"] };
+    }
+  }
 
   // ---------- Plan ----------
   {

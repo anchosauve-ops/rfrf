@@ -8,3 +8,7 @@ export * from "./planner.js";
 export * from "./memory.js";
 export * from "./brief.js";
 export * from "./cards.js";
+export * from "./goals.js";
+export * from "./learning.js";
+export * from "./simulate.js";
+export * from "./council.js";

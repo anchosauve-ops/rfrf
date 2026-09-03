@@ -10,7 +10,8 @@
  * automatic breaks, meeting buffers, task splitting, and a slack reserve so
  * the day isn't scheduled to 100%.
  */
-import type { Energy, Event, Plan, PlanBlock, Preferences, Task } from "./types.js";
+import type { Calibration, Energy, Event, Plan, PlanBlock, Preferences, Task } from "./types.js";
+import { calibratedEstimate } from "./learning.js";
 import { addMinutes, dayKey, minuteOfDay, minutesBetween, setTime, startOfDay, toZoned, sameDay } from "./tz.js";
 import { uid } from "./ids.js";
 
@@ -21,6 +22,10 @@ export interface PlannerInput {
   tasks: Task[];
   events: Event[];
   prefs: Preferences;
+  /** learned model; when present and prefs.useCalibration, estimates are scaled */
+  calibration?: Calibration;
+  /** ids of active goals; goal-linked tasks get a small priority bonus */
+  goalIds?: string[];
 }
 
 interface Interval {
@@ -112,6 +117,9 @@ function fitScore(task: Task, slotEnergy: Energy | undefined): { score: number; 
 
 export function planDay(input: PlannerInput): Plan {
   const { tz, prefs, now } = input;
+  const cal = prefs.useCalibration ? input.calibration : undefined;
+  const est = (t: Task) => Math.max(MIN_SLOT, calibratedEstimate(t, cal) || 30);
+  const goalIds = new Set(input.goalIds ?? []);
   const dayStart = startOfDay(input.date, tz);
   const key = dayKey(dayStart, tz);
   const weekday = toZoned(dayStart, tz).weekday;
@@ -148,7 +156,7 @@ export function planDay(input: PlannerInput): Plan {
   const pinnedToday = open.filter((t) => t.pinnedStart && sameDay(new Date(t.pinnedStart), dayStart, tz));
   for (const t of pinnedToday) {
     const s = new Date(t.pinnedStart!);
-    const en = addMinutes(s, t.estimateMin || 30);
+    const en = addMinutes(s, est(t));
     blocks.push({ id: uid("blk"), kind: "task", title: t.title, start: s.toISOString(), end: en.toISOString(), taskId: t.id, energy: t.energy, reason: "you pinned this time" });
     free = subtract(free, { start: s, end: en });
   }
@@ -169,13 +177,19 @@ export function planDay(input: PlannerInput): Plan {
       base += 18;
       reasons.push("quick win");
     }
+    if (t.goalId && goalIds.has(t.goalId)) {
+      base += 12;
+      reasons.push("serves a goal");
+    }
     if (!isWorkDay) {
       const dueToday = t.due && sameDay(new Date(t.due), dayStart, tz);
       const overdue = t.due && new Date(t.due) < now;
       if (!dueToday && !overdue && t.priority > 1) continue; // protect the weekend
       base += 0;
     }
-    candidates.push({ task: t, remainingMin: Math.max(t.estimateMin || 30, MIN_SLOT), base, reasons, parts: 0 });
+    const calibrated = est(t);
+    if (cal && calibrated !== (t.estimateMin || 30)) reasons.push(`~${calibrated}m by your history`);
+    candidates.push({ task: t, remainingMin: calibrated, base, reasons, parts: 0 });
   }
 
   // --- Greedy placement ---
@@ -257,7 +271,7 @@ export function planDay(input: PlannerInput): Plan {
       title: c.task.title,
       reason:
         c.parts > 0 ? `${c.remainingMin} min still unplaced`
-        : (c.task.estimateMin || 30) > totalFree ? `needs ${c.task.estimateMin} min; no window that long`
+        : est(c.task) > totalFree ? `needs ${est(c.task)} min; no window that long`
         : budget < MIN_SLOT ? "day is full (slack reserved)"
         : c.task.priority === 4 ? "someday — left out on purpose"
         : "lower priority than what made the cut",
@@ -265,14 +279,14 @@ export function planDay(input: PlannerInput): Plan {
 
   const freeMin = blocks.filter((b) => b.kind === "free").reduce((n, b) => n + minutesBetween(new Date(b.start), new Date(b.end)), 0);
   const available = Math.max(1, minutesBetween(windowStart, windowEnd));
-  const committed = focusMin + meetingMin + pinnedToday.reduce((n, t) => n + (t.estimateMin || 30), 0);
+  const committed = focusMin + meetingMin + pinnedToday.reduce((n, t) => n + est(t), 0);
 
   return {
     date: key,
     blocks,
     unscheduled,
     stats: {
-      focusMin: focusMin + pinnedToday.reduce((n, t) => n + (t.estimateMin || 30), 0),
+      focusMin: focusMin + pinnedToday.reduce((n, t) => n + est(t), 0),
       meetingMin,
       breakMin,
       freeMin,

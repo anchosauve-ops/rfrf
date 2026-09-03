@@ -26,9 +26,10 @@ import {
   type RRule,
   type Task,
   type Event,
+  type Goal,
 } from "../../core/index.js";
 
-export type MutatedEntity = "task" | "event" | "memory" | "person" | "nudge" | "plan" | "prefs";
+export type MutatedEntity = "task" | "event" | "memory" | "person" | "nudge" | "plan" | "prefs" | "goal" | "ledger";
 
 export interface ToolResult {
   text: string;
@@ -108,6 +109,7 @@ export function buildTools(svc: Services) {
             project: { type: "string" },
             people: { type: "array", items: { type: "string" }, description: "Names of people involved" },
             recurrence: { type: "string", description: "Natural language, e.g. 'every weekday at 8am'" },
+            goal: { type: "string", description: "Title or id of the goal this serves" },
           },
           required: ["title"],
         },
@@ -132,6 +134,7 @@ export function buildTools(svc: Services) {
           project: str(input.project),
           peopleIds: linkPeople(arr(input.people), title),
           recurrence,
+          goalId: str(input.goal) ? (repo.getGoal(str(input.goal)!) ?? repo.findGoal(str(input.goal)!))?.id : undefined,
           source: "agent",
         });
         return { text: `Added: ${fmtTask(t, tz())} [${t.id}]`, cards: [{ type: "tasks", title: "Added", tasks: [t] }], mutated: ["task"] };
@@ -183,8 +186,8 @@ export function buildTools(svc: Services) {
     complete_task: {
       def: {
         name: "complete_task",
-        description: "Mark a task done, by id or fuzzy title. Recurring tasks roll forward to their next occurrence.",
-        input_schema: { type: "object", properties: { id: { type: "string" }, query: { type: "string" } } },
+        description: "Mark a task done, by id or fuzzy title. Recurring tasks roll forward to their next occurrence. Pass actual_min when the person says how long it really took; it teaches the calibration model.",
+        input_schema: { type: "object", properties: { id: { type: "string" }, query: { type: "string" }, actual_min: { type: "integer", description: "How long it actually took" } } },
       },
       run: (input, now) => {
         const t = resolveTask(input);
@@ -192,10 +195,12 @@ export function buildTools(svc: Services) {
         if (t.recurrence) {
           const next = nextOccurrence(t.recurrence, now, tz());
           const rolled = repo.updateTask(t.id, { due: next?.toISOString(), pinnedStart: undefined });
-          repo.createTask({ ...t, id: undefined, status: "done", completedAt: now.toISOString(), recurrence: undefined, source: t.source });
+          const doneCopy = repo.createTask({ ...t, id: undefined, status: "done", completedAt: now.toISOString(), recurrence: undefined, source: t.source });
+          svc.recordOutcome(doneCopy, now, num(input.actual_min));
           return { text: `Done: ${t.title}. Next one ${next ? formatDate(next, tz()) : "scheduled"}.`, cards: rolled ? [{ type: "tasks", title: "Rolled forward", tasks: [rolled] }] : undefined, mutated: ["task"] };
         }
         const done = repo.updateTask(t.id, { status: "done" })!;
+        svc.recordOutcome(done, now, num(input.actual_min));
         const linked = repo.listPeople().filter((p) => t.peopleIds.includes(p.id));
         for (const p of linked) if (t.energy === "social") repo.updatePerson(p.id, { lastContactAt: now.toISOString() });
         return { text: `Done: ${t.title}.`, cards: [{ type: "tasks", title: "Completed", tasks: [done] }], mutated: ["task", ...(linked.length ? (["person"] as const) : [])] };
@@ -492,6 +497,90 @@ export function buildTools(svc: Services) {
       },
     },
 
+    create_goal: {
+      def: {
+        name: "create_goal",
+        description: "Create a goal the planner should align to. Tasks can be linked to it; the council and the brief report alignment.",
+        input_schema: { type: "object", properties: { title: { type: "string" }, why: { type: "string" }, horizon: { type: "string", enum: ["week", "month", "quarter", "year"] }, target_date: { type: "string" }, pinned: { type: "boolean" } }, required: ["title"] },
+      },
+      run: (input, now) => {
+        const title = str(input.title);
+        if (!title) return { text: "A goal needs a title.", ok: false };
+        const existing = repo.findGoal(title);
+        if (existing) return { text: `Already tracking “${existing.title}”.`, cards: [{ type: "goals", goals: [existing] }] };
+        const g = repo.createGoal({ title, why: str(input.why), horizon: (str(input.horizon) as Goal["horizon"]) ?? "month", targetDate: resolveWhen(input.target_date, now)?.toISOString(), pinned: !!input.pinned });
+        return { text: `Goal set: ${g.title} (${g.horizon}${g.targetDate ? `, by ${formatDate(new Date(g.targetDate), tz())}` : ""}).`, cards: [{ type: "goals", goals: [g] }], mutated: ["goal"] };
+      },
+    },
+
+    update_goal: {
+      def: { name: "update_goal", description: "Update a goal's progress (0..1), status, title, or target date; or link a task to it.", input_schema: { type: "object", properties: { id: { type: "string" }, query: { type: "string" }, progress: { type: "number" }, status: { type: "string", enum: ["active", "done", "paused"] }, title: { type: "string" }, target_date: { type: "string" }, link_task: { type: "string", description: "task id or fuzzy title to link" } } } },
+      run: (input, now) => {
+        const g = (str(input.id) && repo.getGoal(str(input.id)!)) || (str(input.query) ? repo.findGoal(str(input.query)!) : undefined);
+        if (!g) return { text: `No goal matches “${str(input.query) ?? ""}”.`, ok: false };
+        const mutated: MutatedEntity[] = ["goal"];
+        if (str(input.link_task)) {
+          const t = repo.getTask(str(input.link_task)!) ?? repo.findTask(str(input.link_task)!);
+          if (t) { repo.updateTask(t.id, { goalId: g.id }); mutated.push("task"); }
+        }
+        const patch: Partial<Goal> = {};
+        if (num(input.progress) !== undefined) patch.progress = Math.max(0, Math.min(1, num(input.progress)!));
+        if (str(input.status)) patch.status = str(input.status) as Goal["status"];
+        if (str(input.title)) patch.title = str(input.title);
+        if (input.target_date !== undefined) patch.targetDate = resolveWhen(input.target_date, now)?.toISOString();
+        const next = repo.updateGoal(g.id, patch)!;
+        return { text: `Goal updated: ${next.title} · ${Math.round(next.progress * 100)}%${next.status !== "active" ? ` · ${next.status}` : ""}.`, cards: [{ type: "goals", goals: [next] }], mutated };
+      },
+    },
+
+    list_goals: {
+      def: { name: "list_goals", description: "List active goals with how much focus each is getting.", input_schema: { type: "object", properties: {} } },
+      run: (_input, now) => {
+        const goals = repo.listGoals();
+        if (!goals.length) return { text: "No goals yet. Say “goal: ship v1 by October” to set one.", cards: [] };
+        const al = svc.goalAlignment(now);
+        return { text: `Goals:\n${goals.map((g) => `- ${g.title} (${g.horizon}, ${Math.round(g.progress * 100)}%) — ${al.find((a) => a.goalId === g.id)?.focusMin ?? 0} min of focus this week [${g.id}]`).join("\n")}`, cards: [{ type: "goals", goals, alignment: al }] };
+      },
+    },
+
+    assess_risk: {
+      def: { name: "assess_risk", description: "Simulate the coming days (Monte Carlo over calibrated estimates and calendar) and report which deadlines are at risk, with ranked interventions.", input_schema: { type: "object", properties: { horizon_days: { type: "integer" } } } },
+      run: (input, now) => {
+        const report = svc.futures(now, num(input.horizon_days) ?? 7);
+        const danger = report.risks.filter((r) => r.level !== "safe");
+        const text = danger.length
+          ? `${danger.length} deadline${danger.length === 1 ? "" : "s"} at risk over ${report.horizonDays} days (capacity ${Math.round(report.capacity.ratio * 100)}% committed):\n${danger.map((r) => `- ${Math.round(r.pMiss * 100)}% miss · ${r.title} (due ${r.due.slice(0, 10)}, expected ${r.expectedDay})`).join("\n")}${report.interventions.length ? `\nBest moves:\n${report.interventions.slice(0, 3).map((i) => `- ${i.title} (−${Math.round(i.riskDelta * 100)}% of risk)`).join("\n")}` : ""}`
+          : `No deadline is at meaningful risk over the next ${report.horizonDays} days. Capacity ${Math.round(report.capacity.ratio * 100)}% committed.`;
+        return { text, cards: [{ type: "risk", report }] };
+      },
+    },
+
+    convene_council: {
+      def: { name: "convene_council", description: "Run the council: strategist, realist, guardian, connector and editor each critique the current week; returns findings with evidence, a synthesis and one decision. Use before big planning advice.", input_schema: { type: "object", properties: { question: { type: "string" } } } },
+      run: (input, now) => {
+        const verdict = svc.localCouncil(now, str(input.question));
+        return { text: `Council (${verdict.findings.length} findings): ${verdict.synthesis}\nDecision: ${verdict.decision}\n${verdict.findings.map((f) => `- [${f.severity}] ${f.perspective}: ${f.claim}`).join("\n")}`, cards: [{ type: "council", verdict }] };
+      },
+    },
+
+    show_mirror: {
+      def: { name: "show_mirror", description: "What Kairos has learned about the person: estimate bias per energy, real peak hours, plan adherence, slip rates, and any proposed energy curve.", input_schema: { type: "object", properties: {} } },
+      run: (_input, now) => {
+        const cal = svc.calibration(now);
+        const lines = describeCalibrationLines(cal);
+        return { text: lines.length ? lines.join(" ") : `Not enough completed work yet to learn from (${cal.sampleSize} outcomes). Keep going; the mirror sharpens around 10.`, cards: [{ type: "calibration", calibration: cal }] };
+      },
+    },
+
+    undo_last: {
+      def: { name: "undo_last", description: "Undo the most recent autonomous action from the ledger (or a specific ledger id).", input_schema: { type: "object", properties: { id: { type: "string" } } } },
+      run: (input) => {
+        const e = svc.undo(str(input.id));
+        if (!e) return { text: "Nothing to undo.", ok: false };
+        return { text: `Undone: ${e.summary}`, cards: [{ type: "ledger", entries: [e] }], mutated: ["ledger", "task", "plan", "prefs"] };
+      },
+    },
+
     parse_time: {
       def: { name: "parse_time", description: "Resolve natural-language time in the person's timezone. Use when you need the exact instant before creating something.", input_schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
       run: (input, now) => {
@@ -508,6 +597,8 @@ export function buildTools(svc: Services) {
 
   return tools;
 }
+
+import { describeCalibration as describeCalibrationLines } from "../../core/index.js";
 
 export function guessEnergy(title: string): Energy {
   if (/\b(write|writing|draft|design|code|coding|research|think|study|outline|essay|deck|proposal|strategy|architecture|analy[sz]e|deep)\b/i.test(title)) return "deep";

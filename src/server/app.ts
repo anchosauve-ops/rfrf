@@ -10,7 +10,7 @@ import { Services } from "./services.js";
 import { Agent } from "./agent/index.js";
 import { Scheduler } from "./scheduler.js";
 import { Bus } from "./bus.js";
-import { dayKey, parseChrono, type Preferences } from "../core/index.js";
+import { dayKey, parseChrono, describeCalibration, type Preferences } from "../core/index.js";
 
 export interface AppOptions {
   dbPath?: string;
@@ -62,6 +62,8 @@ export function createApp(opts: AppOptions = {}) {
         memories: repo.listMemories().length,
         people: repo.listPeople().length,
         unreadNudges: repo.listNudges().filter((n) => !n.readAt).length,
+        goals: repo.listGoals().length,
+        outcomes: repo.listOutcomes(undefined, 5000).length,
       },
       plan: repo.getPlan(dayKey(t, prefs.timezone)) ?? null,
     });
@@ -243,6 +245,67 @@ export function createApp(opts: AppOptions = {}) {
     return c.json({ ...r, start: r.start?.toISOString(), end: r.end?.toISOString() });
   });
 
+  // ---------- symbiosis: goals, futures, council, mirror, ledger ----------
+  app.get("/api/goals", (c) => {
+    const goals = repo.listGoals(c.req.query("all") === "1");
+    const al = svc.goalAlignment(now());
+    return c.json(goals.map((g) => ({ ...g, alignment: al.find((a) => a.goalId === g.id) ?? null })));
+  });
+  app.post("/api/goals", async (c) => {
+    const r = agent.tools.create_goal!.run(await json<Record<string, unknown>>(c), now());
+    if (r.ok === false) return c.json({ error: r.text }, 400);
+    notify("goal");
+    return c.json(r.cards?.[0]?.type === "goals" ? r.cards[0].goals[0] : null, 201);
+  });
+  app.patch("/api/goals/:id", async (c) => {
+    const g = repo.updateGoal(c.req.param("id"), (await json<Record<string, unknown>>(c)) as never);
+    if (!g) return c.json({ error: "not found" }, 404);
+    notify("goal");
+    return c.json(g);
+  });
+  app.delete("/api/goals/:id", (c) => {
+    if (!repo.deleteGoal(c.req.param("id"))) return c.json({ error: "not found" }, 404);
+    notify("goal"); notify("task");
+    return c.json({ ok: true });
+  });
+  app.get("/api/futures", (c) => c.json(svc.futures(now(), Number(c.req.query("days") ?? 7))));
+  app.post("/api/council", async (c) => {
+    const body = await json<{ question?: string }>(c);
+    return c.json(await agent.council(body.question));
+  });
+  app.get("/api/mirror", (c) => {
+    const t = now();
+    const cal = svc.calibration(t);
+    return c.json({ calibration: cal, learned: describeCalibration(cal), outcomes: repo.listOutcomes(undefined, 200).length, prefs: repo.getPrefs(), ledger: repo.listLedger(30), alignment: svc.goalAlignment(t) });
+  });
+  app.post("/api/mirror/adopt-curve", (c) => {
+    const cal = svc.calibration(now());
+    if (!cal.proposedCurve) return c.json({ error: "not enough evidence yet" }, 400);
+    const before = repo.getPrefs().energyCurve;
+    repo.setPrefs({ energyCurve: cal.proposedCurve });
+    const entry = repo.addLedger({ action: "tune_curve", summary: "Adopted the learned energy curve.", reason: `${cal.sampleSize} outcomes`, undo: [{ entity: "prefs", patch: { energyCurve: before } }], origin: "mirror" });
+    notify("prefs"); notify("ledger");
+    return c.json({ ok: true, entry, prefs: repo.getPrefs() });
+  });
+  app.get("/api/ledger", (c) => c.json(repo.listLedger(Number(c.req.query("limit") ?? 50))));
+  app.post("/api/ledger/:id/undo", (c) => {
+    const e = svc.undo(c.req.param("id"));
+    if (!e) return c.json({ error: "nothing to undo" }, 404);
+    notify("ledger"); notify("task"); notify("plan"); notify("prefs");
+    return c.json(e);
+  });
+  app.post("/api/outcomes/backfill", (c) => {
+    // For people who arrive with a history: turn already-done tasks into outcomes once.
+    const have = new Set(repo.listOutcomes().map((o) => o.taskId));
+    let n = 0;
+    for (const t of repo.listTasks({ status: "done" })) {
+      if (have.has(t.id) || !t.completedAt) continue;
+      svc.recordOutcome(t, new Date(t.completedAt));
+      n++;
+    }
+    return c.json({ backfilled: n });
+  });
+
   // ---------- focus ----------
   app.post("/api/focus/start", async (c) => {
     const body = await json<{ minutes?: number; taskId?: string; title?: string }>(c);
@@ -341,6 +404,7 @@ export function createApp(opts: AppOptions = {}) {
 
 /** A believable first day, so the product is legible in 10 seconds. */
 export function seedDemo(repo: Repo, now: Date): void {
+  type Task = import("../core/index.js").Task;
   const prefs = repo.getPrefs();
   if (!prefs.name) repo.setPrefs({ name: "Will" });
   const d = (h: number, m = 0, dayOffset = 0) => {
@@ -379,6 +443,26 @@ export function seedDemo(repo: Repo, now: Date): void {
     repo.createEvent({ title: "Design review", start: L(15, 0), end: L(16, 0), kind: "meeting", peopleIds: [priya.id] });
     repo.createEvent({ title: "1:1 with Sam", start: L(10, 0, 1), end: L(10, 45, 1), kind: "meeting", peopleIds: [sam.id] });
     repo.createEvent({ title: "Dentist", start: L(8, 30, 3), end: L(9, 30, 3), kind: "personal" });
+  }
+  if (repo.listGoals(true).length === 0) {
+    const g = repo.createGoal({ title: "Ship Kairos v1", why: "The whole quarter is this.", horizon: "quarter", targetDate: new Date(now.getTime() + 55 * 86400_000).toISOString(), progress: 0.35, pinned: true });
+    repo.createGoal({ title: "Run a 10k without stopping", horizon: "quarter", targetDate: new Date(now.getTime() + 70 * 86400_000).toISOString(), progress: 0.5 });
+    for (const t of repo.listTasks({ status: "open" })) if (/investor|offsite|onboarding|design doc/i.test(t.title)) repo.updateTask(t.id, { goalId: g.id });
+    // a month of history so the mirror has something to reflect
+    const hist: [string, Task["energy"], number, number, number, number][] = [
+      ["Draft pricing page", "deep", 60, 110, 9, -20], ["Write launch post", "deep", 90, 170, 10, -18], ["Outline talk", "deep", 45, 80, 9, -15], ["Spec the API", "deep", 120, 190, 10, -12], ["Review PRs", "light", 30, 35, 14, -19],
+      ["Read design doc", "light", 30, 30, 15, -16], ["Skim papers", "light", 45, 40, 14, -9], ["Pay taxes", "admin", 60, 55, 16, -17], ["Renew domain", "admin", 15, 15, 17, -14], ["Expense report", "admin", 30, 25, 16, -11],
+      ["Book travel", "admin", 30, 40, 17, -6], ["Call Dana", "social", 30, 30, 12, -13], ["Coffee with Priya", "social", 45, 50, 13, -8], ["1:1 prep", "social", 20, 20, 12, -5], ["Fix onboarding bug", "deep", 60, 120, 11, -4],
+      ["Write weekly update", "deep", 30, 60, 10, -3], ["Clean inbox", "admin", 30, 25, 17, -2], ["Prep board deck", "deep", 120, 210, 9, -1],
+      ["Refactor auth module", "deep", 90, 150, 9, -22], ["Design onboarding v2", "deep", 120, 200, 10, -23], ["Answer support tickets", "admin", 45, 40, 16, -21], ["Update CRM", "admin", 20, 20, 17, -24],
+      ["Team lunch", "social", 60, 60, 12, -25], ["Call the accountant", "social", 20, 25, 13, -26], ["Read competitor teardown", "light", 40, 35, 14, -27], ["Triage bug list", "light", 30, 30, 15, -28],
+    ];
+    for (const [title, energy, est, actual, hour, dayOff] of hist) {
+      const completedAt = new Date(now.getTime() + dayOff * 86400_000);
+      completedAt.setUTCHours((hour + offset + 24) % 24, 0, 0, 0);
+      const t = repo.createTask({ title, energy, estimateMin: est, priority: 3, status: "done", completedAt: completedAt.toISOString(), createdAt: new Date(completedAt.getTime() - 3 * 86400_000).toISOString(), source: "import", due: dayOff % 3 === 0 ? new Date(completedAt.getTime() - 86400_000).toISOString() : undefined });
+      repo.addOutcome({ taskId: t.id, title, energy, tags: [], estimateMin: est, actualMin: actual, completedAt: completedAt.toISOString(), hour, weekday: new Date(completedAt).getUTCDay(), slipped: dayOff % 3 === 0, onPlan: dayOff % 4 !== 0 });
+    }
   }
   if (repo.listMemories().length === 0) {
     repo.createMemory({ text: "Ship Kairos v1 by the end of October", kind: "goal", importance: 0.95, confidence: 0.95, source: "stated", pinned: true, evidence: "\"The whole point of this quarter is shipping v1 by Halloween.\"" });

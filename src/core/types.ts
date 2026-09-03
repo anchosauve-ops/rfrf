@@ -39,6 +39,7 @@ export interface Task {
   plannedEnd?: ISO;
   snoozedUntil?: ISO;
   project?: string;
+  goalId?: ID;
   tags: string[];
   peopleIds: ID[];
   recurrence?: RRule;
@@ -105,7 +106,7 @@ export interface Person {
 }
 
 // ---------- Rituals & watchers ----------
-export type RitualKind = "morning_brief" | "evening_review" | "weekly_retro" | "custom";
+export type RitualKind = "morning_brief" | "evening_review" | "weekly_retro" | "reflection" | "custom";
 export interface Ritual {
   id: ID;
   name: string;
@@ -123,6 +124,7 @@ export type WatcherKind =
   | "overloaded_day"
   | "unplanned_day"
   | "deadline_approaching"
+  | "deadline_risk"
   | "empty_estimate";
 
 export interface Watcher {
@@ -178,8 +180,12 @@ export interface Preferences {
   theme: "system" | "light" | "dark";
   voice: boolean;
   model: string;
-  /** Agent autonomy: 'ask' confirms every write; 'act' writes freely, narrates after. */
-  autonomy: "ask" | "act";
+  /** Agent autonomy: 'ask' confirms every write; 'act' writes freely, narrates after; 'guardian' also intervenes on predicted risk (logged, undoable). */
+  autonomy: "ask" | "act" | "guardian";
+  /** Let the learned calibration scale estimates in the planner. */
+  useCalibration: boolean;
+  /** Let Kairos adopt its learned energy curve automatically when evidence is strong. */
+  autoTuneCurve: boolean;
   onboarded: boolean;
 }
 
@@ -243,7 +249,140 @@ export type Card =
   | { type: "decision"; question: string; options: { label: string; rationale: string; command?: string }[] }
   | { type: "metrics"; title?: string; items: { label: string; value: string; hint?: string }[] }
   | { type: "confirm"; summary: string; command: string }
-  | { type: "focus"; taskId?: ID; title: string; minutes: number };
+  | { type: "focus"; taskId?: ID; title: string; minutes: number }
+  | { type: "risk"; report: RiskReport }
+  | { type: "council"; verdict: CouncilVerdict }
+  | { type: "calibration"; calibration: Calibration }
+  | { type: "goals"; goals: Goal[]; alignment?: { goalId: ID; title: string; focusMin: number; share: number }[] }
+  | { type: "ledger"; entries: LedgerEntry[] };
+
+// ---------- Goals ----------
+export type GoalHorizon = "week" | "month" | "quarter" | "year";
+export interface Goal {
+  id: ID;
+  title: string;
+  why?: string;
+  horizon: GoalHorizon;
+  targetDate?: ISO;
+  /** 0..1, manual or derived from linked tasks */
+  progress: number;
+  status: "active" | "done" | "paused";
+  pinned: boolean;
+  createdAt: ISO;
+  updatedAt: ISO;
+}
+
+// ---------- Learning (symbiosis) ----------
+/** One completed unit of work: what we predicted vs what happened. */
+export interface Outcome {
+  id: ID;
+  taskId: ID;
+  title: string;
+  energy: Energy;
+  tags: string[];
+  goalId?: ID;
+  estimateMin: number;
+  /** minutes actually spent, when known (focus sessions or explicit report) */
+  actualMin?: number;
+  plannedStart?: ISO;
+  completedAt: ISO;
+  /** hour of day (0-23) in the person's zone when it was completed */
+  hour: number;
+  weekday: number;
+  /** completed after its due date */
+  slipped: boolean;
+  /** completed on the day it was planned for */
+  onPlan?: boolean;
+}
+
+export interface Calibration {
+  /** multiply estimates by this, per energy (1 = accurate, 1.6 = you underestimate by 60%) */
+  estimateBias: Record<Energy, { factor: number; n: number; confidence: number }>;
+  /** 24 buckets: relative completion propensity by hour, 0..1 normalized */
+  hourPropensity: number[];
+  /** per energy: the hours where that kind of work actually gets done, ranked */
+  peakHours: Record<Energy, number[]>;
+  /** share of planned tasks completed on the planned day */
+  planAdherence: { rate: number; n: number };
+  /** slip rate by tag and energy */
+  slipRate: { byEnergy: Record<Energy, number>; byTag: Record<string, number>; overall: number; n: number };
+  /** learned energy curve proposal, if evidence is strong enough */
+  proposedCurve?: EnergySlot[];
+  sampleSize: number;
+  generatedAt: ISO;
+}
+
+// ---------- Futures (simulation) ----------
+export interface TaskRisk {
+  taskId: ID;
+  title: string;
+  due: ISO;
+  priority: Priority;
+  /** probability of missing the deadline, 0..1 */
+  pMiss: number;
+  /** median expected completion day key */
+  expectedDay: string;
+  /** median expected completion instant */
+  expectedAt: ISO;
+  level: "safe" | "watch" | "danger";
+  goalId?: ID;
+}
+export interface Intervention {
+  id: string;
+  kind: "defer" | "shrink" | "drop" | "protect" | "move_meeting" | "reorder";
+  title: string;
+  detail: string;
+  /** share of total baseline deadline risk removed if applied, 0..1 */
+  riskDelta: number;
+  command: string;
+  targetTaskId?: ID;
+  targetEventId?: ID;
+}
+export interface RiskReport {
+  horizonDays: number;
+  runs: number;
+  risks: TaskRisk[];
+  interventions: Intervention[];
+  /** expected focus minutes available vs demanded over horizon */
+  capacity: { availableMin: number; demandedMin: number; ratio: number };
+  /** per day over horizon: expected load 0..1+ */
+  loadByDay: { day: string; load: number; meetingsMin: number }[];
+  generatedAt: ISO;
+  seed: number;
+}
+
+// ---------- Council (deliberation) ----------
+export type Perspective = "strategist" | "realist" | "guardian" | "connector" | "editor";
+export interface CouncilFinding {
+  perspective: Perspective;
+  severity: "note" | "warn" | "critical";
+  claim: string;
+  evidence: string;
+  suggestion?: string;
+  command?: string;
+}
+export interface CouncilVerdict {
+  question: string;
+  findings: CouncilFinding[];
+  synthesis: string;
+  /** the single most important thing to do next */
+  decision: string;
+  mode: "claude" | "local";
+  generatedAt: ISO;
+}
+
+// ---------- Ledger (autonomous actions, all reversible) ----------
+export interface LedgerEntry {
+  id: ID;
+  action: string; // e.g. "defer_task", "replan", "shrink_estimate"
+  summary: string;
+  reason: string;
+  /** what to do to reverse it */
+  undo: { entity: "task" | "event" | "prefs"; id?: ID; patch: Record<string, unknown> }[];
+  origin: string; // watcher/ritual id or "agent"
+  createdAt: ISO;
+  undoneAt?: ISO;
+}
 
 // ---------- Conversation ----------
 export type Role = "user" | "assistant" | "system";
@@ -265,7 +404,7 @@ export type AgentEvent =
   | { type: "tool_start"; name: string; input: unknown }
   | { type: "tool_end"; name: string; ok: boolean; summary: string }
   | { type: "card"; card: Card }
-  | { type: "mutation"; entity: "task" | "event" | "memory" | "person" | "nudge" | "plan" | "prefs" }
+  | { type: "mutation"; entity: "task" | "event" | "memory" | "person" | "nudge" | "plan" | "prefs" | "goal" | "ledger" }
   | { type: "done"; turnId: ID; text: string; cards: Card[] }
   | { type: "error"; message: string };
 
@@ -288,5 +427,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   voice: false,
   model: "claude-opus-5",
   autonomy: "act",
+  useCalibration: true,
+  autoTuneCurve: false,
   onboarded: false,
 };
