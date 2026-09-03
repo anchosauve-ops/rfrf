@@ -5,6 +5,20 @@ import { setState, toast, useStore } from "../lib/store";
 export function FocusOverlay() {
   const focus = useStore((s) => s.focus);
   const [left, setLeft] = useState(0);
+  const finish = async (outcome: "completed" | "abandoned") => {
+    const f = focus;
+    setState({ focus: undefined });
+    if (f?.id) await api.post(`/focus/${f.id}/end`, { outcome }).catch(() => {});
+    if (outcome === "completed") {
+      toast(`Focus block done: ${f?.title}`);
+      if (f?.taskId) {
+        // Offer completion without forcing it.
+        setTimeout(() => {
+          if (confirm(`Mark "${f.title}" as done?`)) api.post(`/tasks/${f.taskId}/complete`).then(() => emitLocal({ type: "mutation", entity: "task" })).catch(() => {});
+        }, 200);
+      }
+    }
+  };
   useEffect(() => {
     if (!focus) return;
     let id = focus.id;
@@ -28,23 +42,8 @@ export function FocusOverlay() {
       clearInterval(t);
       document.title = "Kairos";
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.startedAt]);
 
-  const finish = async (outcome: "completed" | "abandoned") => {
-    const f = focus;
-    setState({ focus: undefined });
-    if (f?.id) await api.post(`/focus/${f.id}/end`, { outcome }).catch(() => {});
-    if (outcome === "completed") {
-      toast(`Focus block done: ${f?.title}`);
-      if (f?.taskId) {
-        // Offer completion without forcing it.
-        setTimeout(() => {
-          if (confirm(`Mark "${f.title}" as done?`)) api.post(`/tasks/${f.taskId}/complete`).then(() => emitLocal({ type: "mutation", entity: "task" })).catch(() => {});
-        }, 200);
-      }
-    }
-  };
 
   if (!focus) return null;
   const mm = String(Math.floor(left / 60)).padStart(2, "0");

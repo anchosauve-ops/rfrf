@@ -88,7 +88,7 @@ describe("server", () => {
     const before = await call("GET", "/api/prefs");
     expect(before.body.hasApiKey).toBe(false);
     const app2 = createApp({ now, webDir: "/nonexistent" });
-    await app2.app.request("/api/prefs", { method: "PUT", body: JSON.stringify({ apiKey: "sk-ant-test" }), headers: { "content-type": "application/json" } });
+    await app2.app.request("/api/prefs", { method: "PUT", body: JSON.stringify({ apiKey: "sk-ant-api03-" + "t".repeat(40) }), headers: { "content-type": "application/json" } });
     expect(app2.agent.mode()).toBe("claude");
   });
 });

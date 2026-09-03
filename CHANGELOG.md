@@ -18,6 +18,14 @@ The end version of the first arc: a symbiotic personal intelligence that runs yo
 - Goals with alignment and pace; nightly reflection that writes learned insights into memory.
 - Mirror: the learned model in plain words, with the dials that decide what Kairos may do with it.
 
+### Production hardening
+- Validation and bounds on every HTTP write; 400s with messages; 413 on oversized bodies.
+- API key encrypted at rest; legacy plaintext upgraded on read.
+- Daily backups with retention; on-demand backup endpoint; health reports uptime and last backup.
+- Request logging; crash-contained scheduler ticks; graceful shutdown.
+- ESLint, a Chromium end-to-end smoke test and a Docker health probe in CI; migration test from the v1 schema.
+- CLAUDE.md, SECURITY.md, CONTRIBUTING.md.
+
 ### Product
 - React PWA with a validated light/dark design system, streaming command bar with cards and voice, nine views, onboarding, focus mode, export/import.
 - Hono + `node:sqlite` server, SSE agent stream and live channel, CORS restricted to local origins, binds to 127.0.0.1 by default.

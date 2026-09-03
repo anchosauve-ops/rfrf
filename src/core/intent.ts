@@ -142,12 +142,12 @@ function extractLocation(text: string): { text: string; location?: string } {
 
 const TASK_LEADS = [
   /^(?:please\s+)?remind\s+me\s+(?:to\s+|about\s+|that\s+i\s+need\s+to\s+|that\s+)?/i,
-  /^(?:please\s+)?(?:add|create|new|make)\s+(?:a\s+)?(?:new\s+)?(?:task|todo|to-do|reminder)(?:\s*[:\-]\s*|\s+to\s+|\s+)/i,
-  /^(?:task|todo|to-do|reminder)\s*[:\-]?\s+/i,
+  /^(?:please\s+)?(?:add|create|new|make)\s+(?:a\s+)?(?:new\s+)?(?:task|todo|to-do|reminder)(?:\s*[:-]\s*|\s+to\s+|\s+)/i,
+  /^(?:task|todo|to-do|reminder)\s*[:-]?\s+/i,
   /^i\s+(?:need|have|want|got|ought)\s+to\s+/i,
   /^i\s+(?:should|must|gotta|have\s+got\s+to)\s+/i,
   /^(?:don'?t\s+forget|dont\s+forget|remember)\s+to\s+/i,
-  /^note\s+to\s+self\s*[:\-]?\s*(?:to\s+)?/i,
+  /^note\s+to\s+self\s*[:-]?\s*(?:to\s+)?/i,
   /^(?:can\s+you\s+)?(?:put|add)\s+(.+?)\s+(?:on|to)\s+(?:my\s+)?(?:list|todo|to-do|tasks?)\b/i,
 ];
 
@@ -191,7 +191,7 @@ export function parseIntent(raw: string, ctx: IntentContext): ParsedIntent {
   if (/^(?:(?:show\s+)?(?:my\s+)?goals|what\s+are\s+my\s+goals|list\s+goals)\??$/i.test(lower))
     return { intent: { type: "list_goals" }, confidence: 0.95, trace: ["list_goals"] };
   {
-    const g = /^(?:(?:new|add|set|create)\s+)?goal\s*[:\-]?\s+(.+)$/i.exec(text) ?? /^(?:this\s+(week|month|quarter|year)\s+i\s+want\s+to|my\s+goal\s+(?:this\s+(week|month|quarter|year)\s+)?is\s+to)\s+(.+)$/i.exec(text);
+    const g = /^(?:(?:new|add|set|create)\s+)?goal\s*[:-]?\s+(.+)$/i.exec(text) ?? /^(?:this\s+(week|month|quarter|year)\s+i\s+want\s+to|my\s+goal\s+(?:this\s+(week|month|quarter|year)\s+)?is\s+to)\s+(.+)$/i.exec(text);
     if (g) {
       const body = stripEdges(g[g.length - 1] ?? "");
       const c = parseChrono(body, { now: ctx.now, tz: ctx.tz });
@@ -243,7 +243,7 @@ export function parseIntent(raw: string, ctx: IntentContext): ParsedIntent {
   if (/^(?:who\s+(?:should|do)\s+i\s+(?:reach\s+out\s+to|call|text|message|contact|check\s+in\s+(?:with|on)|catch\s+up\s+with)(?:\s+today|\s+this\s+week)?|(?:show\s+)?(?:my\s+)?people|relationships|stale\s+(?:contacts|people)|who\s+am\s+i\s+neglecting)\??$/i.test(lower))
     return { intent: { type: "people_touch" }, confidence: 0.9, trace: ["people_touch"] };
   {
-    const m = /^(?:add|new|create)\s+(?:a\s+)?(?:person|contact)\s*[:\-]?\s+([A-Za-z][\w'-]+(?:\s+[A-Z][\w'-]+)?)(?:\s*[,\-–(]\s*(.+?)\)?)?$/i.exec(text) ?? /^(?:i\s+)?met\s+([A-Z][\w'-]+(?:\s+[A-Z][\w'-]+)?)(?:\s*[,\-–]\s*|\s+(?:today|yesterday)\s*[,\-–]?\s*|\s+)?(.*)$/.exec(text);
+    const m = /^(?:add|new|create)\s+(?:a\s+)?(?:person|contact)\s*[:-]?\s+([A-Za-z][\w'-]+(?:\s+[A-Z][\w'-]+)?)(?:\s*[,\-–(]\s*(.+?)\)?)?$/i.exec(text) ?? /^(?:i\s+)?met\s+([A-Z][\w'-]+(?:\s+[A-Z][\w'-]+)?)(?:\s*[,\-–]\s*|\s+(?:today|yesterday)\s*[,\-–]?\s*|\s+)?(.*)$/.exec(text);
     if (m) {
       const name = stripEdges(m[1] ?? "");
       const rest = stripEdges(m[2] ?? "");
@@ -280,7 +280,7 @@ export function parseIntent(raw: string, ctx: IntentContext): ParsedIntent {
 
   // ---------- Memory ----------
   {
-    const m = /^(?:please\s+)?(?:remember|note|fyi|memo)\s*[:\-]?\s*(?:that\s+)?(.+)$/i.exec(text) ?? /^(i\s+(?:prefer|like|love|hate|dislike|usually|always|never|tend\s+to|want\s+to|am\s+trying\s+to)\s+.+|my\s+(?:goal|aim|plan|intention)\s+(?:is|this\s+\w+)\s+.+|my\s+\w+(?:'s)?\s+(?:name\s+)?is\s+.+)$/i.exec(text);
+    const m = /^(?:please\s+)?(?:remember|note|fyi|memo)\s*[:-]?\s*(?:that\s+)?(.+)$/i.exec(text) ?? /^(i\s+(?:prefer|like|love|hate|dislike|usually|always|never|tend\s+to|want\s+to|am\s+trying\s+to)\s+.+|my\s+(?:goal|aim|plan|intention)\s+(?:is|this\s+\w+)\s+.+|my\s+\w+(?:'s)?\s+(?:name\s+)?is\s+.+)$/i.exec(text);
     if (m && !/^remember\s+to\s/i.test(text)) {
       const body = stripEdges(m[1] ?? "");
       const kind: MemoryKind =

@@ -135,7 +135,9 @@ Keyboard: `⌘K` or `/` focuses the command bar, `1–7` switch views, `Esc` col
 
 ```bash
 pnpm dev        # both servers with hot reload
-pnpm test       # 113 tests: parser, planner, memory, learning, futures, council, goals, server, scheduler
+pnpm lint       # eslint (typescript-eslint + react-hooks)
+pnpm test       # 123 tests: parser, planner, memory, learning, futures, council, goals, server, scheduler, hardening, migrations
+pnpm e2e        # browser smoke test against the production build (Chromium)
 pnpm typecheck  # web + server
 pnpm build      # web bundle + server transpile
 pnpm check      # all of the above
@@ -168,6 +170,15 @@ src/web      React + Vite PWA; design system, command bar, nine views
 tests        vitest
 docs         vision, architecture, screenshots
 ```
+
+## Production notes
+
+- Every write over HTTP is validated and bounded (`src/server/validate.ts`); bodies are capped at 2 MB (25 MB for import).
+- The API key saved through the UI is encrypted at rest (AES-256-GCM; `KAIROS_SECRET` or a generated `.kairos-secret` file). Prefer `ANTHROPIC_API_KEY` in the environment for deployments.
+- Daily JSON backups land next to the database (`backups/`, 14 kept). `POST /api/backup` makes one on demand.
+- Requests are logged to stdout; the scheduler contains failures per ritual and watcher; `SIGTERM` closes the database cleanly.
+- CI runs lint, typecheck, tests, build, a Chromium end-to-end smoke test, and a Docker build with a health probe.
+- See [SECURITY.md](SECURITY.md) for the threat model and [CLAUDE.md](CLAUDE.md) for the layering rules.
 
 ## Status
 

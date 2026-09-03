@@ -53,15 +53,19 @@ export function useResource<T>(path: string | null, entities: string[], deps: un
   const [loading, setLoading] = useState(!!path);
   const [error, setError] = useState<string>();
   const alive = useRef(true);
+  const depsKey = JSON.stringify(deps);
   const load = useCallback(() => {
     if (!path) return;
     api
       .get<T>(path)
-      .then((d) => alive.current && (setData(d), setError(undefined)))
+      .then((d) => {
+        if (!alive.current) return;
+        setData(d);
+        setError(undefined);
+      })
       .catch((e: Error) => alive.current && setError(e.message))
       .finally(() => alive.current && setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, ...deps]);
+  }, [path, depsKey]);
   useEffect(() => {
     alive.current = true;
     load();

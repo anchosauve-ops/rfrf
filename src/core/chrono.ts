@@ -116,7 +116,7 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
   const w: Work = { text: ` ${input} `, matched: [], isDeadline: false };
 
   // ---------- 1. Recurrence ----------
-  take(w, /\b(every|each)\s+(other\s+)?(\d+\s+)?(day|weekday|week|month|year|(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*(?:\s*(?:,|and|&)\s*(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*)*)s?\b/i, (m) => {
+  void (take(w, /\b(every|each)\s+(other\s+)?(\d+\s+)?(day|weekday|week|month|year|(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*(?:\s*(?:,|and|&)\s*(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*)*)s?\b/i, (m) => {
     const interval = m[2] ? 2 : m[3] ? Number(m[3]) : 1;
     const unit = (m[4] ?? "day").toLowerCase();
     if (unit === "day") w.recurrence = { freq: "daily", interval };
@@ -136,10 +136,10 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
       : u === "monthly" ? { freq: "monthly" }
       : u === "weekdays" ? { freq: "weekly", byWeekday: [1, 2, 3, 4, 5] }
       : { freq: "yearly" };
-  });
+  }));
 
   // ---------- 3. Relative "in N units" ----------
-  take(w, /\bin\s+(?:about\s+|around\s+)?(an?\s+couple\s+of|a\s+few|an?|\d+(?:\.\d+)?|[a-z]+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?)\b/i, (m) => {
+  void (take(w, /\bin\s+(?:about\s+|around\s+)?(an?\s+couple\s+of|a\s+few|an?|\d+(?:\.\d+)?|[a-z]+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?)\b/i, (m) => {
     const q = (m[1] ?? "").toLowerCase().replace(/^an?\s+couple\s+of$/, "couple").replace(/^a\s+few$/, "few");
     const n = num(q);
     const unit = (m[2] ?? "").toLowerCase();
@@ -150,11 +150,11 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
     else if (unit.startsWith("mo")) {
       w.dayBase = fromZoned({ year: nowP.year, month: nowP.month + Math.round(n), day: nowP.day }, tz);
     }
-  });
+  }));
 
   // ---------- 2. Duration ----------
   // "for 45 min", "for an hour", "for 1.5 hours", "for half an hour"
-  take(w, /\bfor\s+(half\s+an?|an?|\d+(?:\.\d+)?|[a-z]+)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/i, (m) => {
+  void (take(w, /\bfor\s+(half\s+an?|an?|\d+(?:\.\d+)?|[a-z]+)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/i, (m) => {
     const q = (m[1] ?? "").toLowerCase();
     const n = q.startsWith("half") ? 0.5 : num(q);
     const unit = (m[2] ?? "").toLowerCase();
@@ -166,10 +166,10 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
   }) ||
   take(w, /[(~]?\b(\d+)\s*(m|min|mins|minutes?)\b\)?/i, (m) => {
     w.durationMin = Number(m[1]);
-  });
+  }));
 
   // ---------- 4. Explicit dates ----------
-  take(w, /\b(\d{4})-(\d{2})-(\d{2})\b/, (m) => {
+  void (take(w, /\b(\d{4})-(\d{2})-(\d{2})\b/, (m) => {
     w.dayBase = fromZoned({ year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) }, tz);
   }) ||
   take(w, new RegExp(`\\b(?:on\\s+|by\\s+|due\\s+)?(${MONTH_RE})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?\\b`, "i"), (m) => {
@@ -214,10 +214,10 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
     const day = Number(m[1]);
     const month = day < nowP.day ? nowP.month + 1 : nowP.month;
     w.dayBase = fromZoned({ year: nowP.year, month, day }, tz);
-  });
+  }));
 
   // ---------- 5. Day words ----------
-  take(w, /\b(?:by\s+|before\s+|until\s+|due\s+)?(day\s+after\s+tomorrow|tomorrow|tmrw|tmr|today|tonight|yesterday)\b/i, (m) => {
+  void (take(w, /\b(?:by\s+|before\s+|until\s+|due\s+)?(day\s+after\s+tomorrow|tomorrow|tmrw|tmr|today|tonight|yesterday)\b/i, (m) => {
     if (/^(by|before|until|due)\s/i.test(m[0])) w.isDeadline = true;
     const word = (m[1] ?? "").toLowerCase().replace(/\s+/g, " ");
     if (word.startsWith("day after")) w.dayBase = dayAt(2);
@@ -225,8 +225,8 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
     else if (word === "yesterday") w.dayBase = dayAt(-1);
     else if (word === "tonight") { w.dayBase = today; if (w.hour === undefined) { w.hour = 20; w.minute = 0; } }
     else w.dayBase = today;
-  });
-  take(w, /\b(?:by\s+|before\s+)?(?:the\s+)?(end\s+of\s+(?:the\s+)?(?:day|week|month)|eod|eow|eom|cob)\b/i, (m) => {
+  }));
+  void (take(w, /\b(?:by\s+|before\s+)?(?:the\s+)?(end\s+of\s+(?:the\s+)?(?:day|week|month)|eod|eow|eom|cob)\b/i, (m) => {
     w.isDeadline = true;
     const word = (m[1] ?? "").toLowerCase().replace(/\s+/g, " ");
     if (word === "eod" || word === "cob" || word.endsWith("day")) {
@@ -242,8 +242,8 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
       w.dayBase = last;
       w.hour = 17; w.minute = 0;
     }
-  });
-  take(w, /\b(this|next)\s+(week|month|weekend)\b/i, (m) => {
+  }));
+  void (take(w, /\b(this|next)\s+(week|month|weekend)\b/i, (m) => {
     const which = (m[1] ?? "").toLowerCase();
     const unit = (m[2] ?? "").toLowerCase();
     if (unit === "weekend") {
@@ -255,18 +255,18 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
     } else {
       w.dayBase = fromZoned({ year: nowP.year, month: nowP.month + (which === "next" ? 1 : 0), day: which === "next" ? 1 : nowP.day }, tz);
     }
-  });
-  take(w, /\b(this|in\s+the)\s+(morning|afternoon|evening)\b|\b(at\s+)?(night|noon|midday|midnight)\b/i, (m) => {
+  }));
+  void (take(w, /\b(this|in\s+the)\s+(morning|afternoon|evening)\b|\b(at\s+)?(night|noon|midday|midnight)\b/i, (m) => {
     const word = (m[2] ?? m[4] ?? "").toLowerCase();
     w.dayBase ??= today;
     if (w.hour !== undefined && !["noon", "midday", "midnight"].includes(word)) return;
     const map: Record<string, number> = { morning: 9, afternoon: 14, evening: 18, night: 20, noon: 12, midday: 12, midnight: 0 };
     w.hour = map[word] ?? defaultHour;
     w.minute = 0;
-  });
+  }));
 
   // ---------- 6. Weekdays ----------
-  take(w, new RegExp(`\\b(?:(next|this|on|by|before|until|due)\\s+)?(${WEEKDAY_RE})\\b`, "i"), (m) => {
+  void (take(w, new RegExp(`\\b(?:(next|this|on|by|before|until|due)\\s+)?(${WEEKDAY_RE})\\b`, "i"), (m) => {
     const mod = (m[1] ?? "").toLowerCase();
     if (["by", "before", "until", "due"].includes(mod)) w.isDeadline = true;
     const wd = WEEKDAYS[(m[2] ?? "").toLowerCase()] ?? nowP.weekday;
@@ -283,11 +283,11 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
     }
     if (!w.recurrence) w.dayBase = dayAt(delta);
     else if (!w.recurrence.byWeekday && w.recurrence.freq === "weekly") w.recurrence.byWeekday = [wd];
-  });
+  }));
 
   // ---------- 7. Time ranges & clock times ----------
   // "from 2 to 4pm", "2-4pm", "3:30pm - 5pm", "between 9 and 10"
-  take(w, /\b(?:from\s+|between\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*(?:-|–|to|until|till|and)\s*(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i, (m) => {
+  void (take(w, /\b(?:from\s+|between\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*(?:-|–|to|until|till|and)\s*(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i, (m) => {
     const endT = toHour(m[4] ?? "0", m[5], m[6]);
     const startT = toHour(m[1] ?? "0", m[2], m[3] ?? m[6]);
     if (!startT || !endT) return;
@@ -310,7 +310,7 @@ export function parseChrono(input: string, opts: ChronoOptions): ChronoResult {
     const t = toHour(m[1] ?? "0", undefined, m[2]);
     if (!t) return;
     w.hour = t.hour; w.minute = t.minute;
-  });
+  }));
 
   // ---------- Assemble ----------
   let start: Date | undefined;

@@ -8,6 +8,8 @@ import { nextOccurrence, dayKey, type Nudge, type Ritual, type Watcher } from ".
 
 export class Scheduler {
   private timer?: NodeJS.Timeout;
+  /** optional hooks run once per day (e.g. backups); errors are contained */
+  daily: { name: string; run: () => void; lastRunDay?: string }[] = [];
   constructor(private svc: Services, private bus: Bus, private now: () => Date = () => new Date()) {}
 
   start(intervalMs = 60_000): void {
@@ -22,30 +24,52 @@ export class Scheduler {
   }
 
   /** One pass. Exposed for tests and for "run now" buttons. */
-  tick(): { rituals: string[]; watchers: string[] } {
+  tick(): { rituals: string[]; watchers: string[]; errors: string[] } {
     const now = this.now();
-    const fired = { rituals: [] as string[], watchers: [] as string[] };
+    const fired = { rituals: [] as string[], watchers: [] as string[], errors: [] as string[] };
     const tz = this.svc.prefs().timezone;
     for (const r of this.svc.repo.listRituals()) {
       if (!r.enabled) continue;
-      const anchor = r.lastRunAt ? new Date(r.lastRunAt) : new Date(now.getTime() - 6 * 3600_000);
-      const due = nextOccurrence(r.rule, anchor, tz);
-      if (due && due <= now) {
-        this.runRitual(r, now);
-        fired.rituals.push(r.id);
+      try {
+        const anchor = r.lastRunAt ? new Date(r.lastRunAt) : new Date(now.getTime() - 6 * 3600_000);
+        const due = nextOccurrence(r.rule, anchor, tz);
+        if (due && due <= now) {
+          this.runRitual(r, now);
+          fired.rituals.push(r.id);
+        }
+      } catch (e) {
+        fired.errors.push(`ritual ${r.id}: ${e instanceof Error ? e.message : String(e)}`);
+        // don't let a broken ritual fire every minute forever
+        this.svc.repo.upsertRitual({ ...r, lastRunAt: now.toISOString() });
       }
     }
     for (const w of this.svc.repo.listWatchers()) {
       if (!w.enabled) continue;
       if (w.lastFiredAt && now.getTime() - new Date(w.lastFiredAt).getTime() < w.cooldownMin * 60_000) continue;
-      const nudge = this.evaluateWatcher(w, now);
-      if (nudge) {
-        const n = this.svc.repo.createNudge(nudge);
+      try {
+        const nudge = this.evaluateWatcher(w, now);
+        if (nudge) {
+          const n = this.svc.repo.createNudge(nudge);
+          this.svc.repo.upsertWatcher({ ...w, lastFiredAt: now.toISOString() });
+          this.bus.publish({ type: "nudge", nudgeId: n.id });
+          fired.watchers.push(w.id);
+        }
+      } catch (e) {
+        fired.errors.push(`watcher ${w.id}: ${e instanceof Error ? e.message : String(e)}`);
         this.svc.repo.upsertWatcher({ ...w, lastFiredAt: now.toISOString() });
-        this.bus.publish({ type: "nudge", nudgeId: n.id });
-        fired.watchers.push(w.id);
       }
     }
+    const day = dayKey(now, tz);
+    for (const h of this.daily) {
+      if (h.lastRunDay === day) continue;
+      try {
+        h.run();
+      } catch (e) {
+        fired.errors.push(`daily ${h.name}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      h.lastRunDay = day;
+    }
+    if (fired.errors.length) console.error("[kairos] scheduler:", fired.errors.join("; "));
     return fired;
   }
 

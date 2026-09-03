@@ -1,5 +1,5 @@
 import type { Calibration, CouncilVerdict, Goal, LedgerEntry, RiskReport } from "@core/types";
-import { runCommand, useStore } from "../lib/store";
+import { runCommand, useNow, useStore } from "../lib/store";
 import { api, emitLocal } from "../lib/api";
 import { fmtDay } from "../lib/time";
 
@@ -149,7 +149,7 @@ export function CalibrationCard({ calibration: c, stated, onAdopt }: { calibrati
 
 export function GoalsCard({ goals, alignment }: { goals: Goal[]; alignment?: { goalId: string; title: string; focusMin: number; share: number }[] }) {
   const tz = useStore((s) => s.ctx?.prefs.timezone);
-  const now = Date.now();
+  const now = useNow(60_000).getTime();
   return (
     <div className="acard">
       <div className="ct">Goals</div>
