@@ -23,7 +23,7 @@ export interface BriefInput {
 }
 
 /** One line per paid worker: hours and cost this week, flagged when light. */
-export function teamSection(people: Person[], worklogs: WorkLog[], now: Date, tz: string): BriefSection | undefined {
+function teamSection(people: Person[], worklogs: WorkLog[], now: Date, tz: string): BriefSection | undefined {
   const paid = people.filter((p) => p.hourlyRate);
   if (!paid.length) return undefined;
   const today = dayKey(now, tz);
@@ -183,7 +183,7 @@ const REFLECTIONS = [
   "What are you avoiding, and what's the smallest first step?",
   "What deserved more attention than it got?",
 ];
-export function pickReflection(now: Date): string {
+function pickReflection(now: Date): string {
   const day = Math.floor(now.getTime() / 86400000);
   return REFLECTIONS[day % REFLECTIONS.length]!;
 }

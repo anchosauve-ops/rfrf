@@ -22,7 +22,7 @@ export function tokenize(text: string): string[] {
     .map(stem);
 }
 
-export function stem(t: string): string {
+function stem(t: string): string {
   if (t.length <= 4) return t;
   let w = t.replace(/ies$/, "y").replace(/(?<=[^s])(es|s)$/, "");
   if (w.length > 4) w = w.replace(/(ing|edly|ed|ly)$/, "");
@@ -52,7 +52,7 @@ export interface Scored<T> {
   why: string[];
 }
 
-export function scoreMemory(m: Memory, queryTokens: string[], now: Date): Scored<Memory> {
+function scoreMemory(m: Memory, queryTokens: string[], now: Date): Scored<Memory> {
   const why: string[] = [];
   const mt = new Set(tokenize(m.text).concat(m.tags.map(stem)));
   let overlap = 0;
@@ -84,7 +84,7 @@ export function recall(memories: Memory[], query: string, opts: { now: Date; lim
 }
 
 /** Jaccard similarity over stemmed tokens. */
-export function similarity(a: string, b: string): number {
+function similarity(a: string, b: string): number {
   const A = new Set(tokenize(a));
   const B = new Set(tokenize(b));
   if (!A.size || !B.size) return 0;

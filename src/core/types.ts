@@ -61,7 +61,6 @@ export interface Event {
   location?: string;
   notes?: string;
   peopleIds: ID[];
-  recurrence?: RRule;
   source: Source;
   createdAt: ISO;
   updatedAt: ISO;
@@ -162,8 +161,7 @@ export type WatcherKind =
   | "unplanned_day"
   | "deadline_approaching"
   | "deadline_risk"
-  | "team_hours"
-  | "empty_estimate";
+  | "team_hours";
 
 export interface Watcher {
   id: ID;
@@ -431,7 +429,6 @@ export interface Turn {
   role: Role;
   text: string;
   cards?: Card[];
-  toolCalls?: { name: string; input: unknown; result?: string }[];
   createdAt: ISO;
 }
 

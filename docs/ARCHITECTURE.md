@@ -25,7 +25,7 @@ Kairos is three layers with strict dependencies: **web → server → core**, an
 
 ## core (`src/core`)
 
-Pure TypeScript. No Node APIs, no DOM, no network. Everything is a function of its inputs plus an explicit `now` and `tz`, which is what makes 92 tests fast and deterministic.
+Pure TypeScript. No Node APIs, no DOM, no network. Everything is a function of its inputs plus an explicit `now` and `tz`, which is what keeps the test suite fast and deterministic.
 
 - **`tz.ts`** — Intl-based zone math (`toZoned`, `fromZoned`, `startOfDay`, `addDays`, `setTime`). DST-safe by two-pass offset resolution. Avoids a date library entirely.
 - **`chrono.ts`** — natural-language time. Sequential regex passes each consume a span (recurrence → relative → duration → explicit dates → day words → weekdays → clock times/ranges) and return the remainder as a clean title. Knows deadlines ("by", "before", "eod") from pins ("at").
@@ -96,7 +96,7 @@ complete task ─► Outcome (estimate, actual, hour, slipped, onPlan)
 
 ## Testing
 
-`vitest`, 140 tests: chrono (zones, DST, ranges, recurrence), intent (every intent family), planner (no overlaps, buffers, pins, splits, energy placement, weekend protection), memory (ranking, decay, dedupe, extraction), rrule, brief, the Claude brain against a mocked client (tool loop, request shape per model, refusal, pause_turn, council structured output, fallback to Local Mind), regressions from the final review, hardening (validation, secrets, limits, backups, migrations), learning (priors, bias, peaks, proposed curve), futures (determinism, light vs impossible weeks, meetings consuming capacity, calibration raising risk, ranked interventions), council and goals, and server (REST, SSE, agent turns, scheduler cooldowns, export/import idempotence, key → mode, goals CRUD, outcome recording, futures, council, guardian intervention + undo, reflection dedupe).
+`vitest`, 152 tests: chrono (zones, DST, ranges, recurrence), intent (every intent family), planner (no overlaps, buffers, pins, splits, energy placement, weekend protection), memory (ranking, decay, dedupe, extraction), rrule, brief, the Claude brain against a mocked client (tool loop, request shape per model, refusal, pause_turn, council structured output, fallback to Local Mind), regressions from the final review, hardening (validation, secrets, limits, backups, migrations), learning (priors, bias, peaks, proposed curve), futures (determinism, light vs impossible weeks, meetings consuming capacity, calibration raising risk, ranked interventions), council and goals, and server (REST, SSE, agent turns, scheduler cooldowns, export/import idempotence, key → mode, goals CRUD, outcome recording, futures, council, guardian intervention + undo, reflection dedupe).
 
 ## Extending
 

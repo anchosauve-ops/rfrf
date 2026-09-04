@@ -11,7 +11,6 @@ const WATCH_HELP: Record<Watcher["kind"], (t: number) => string> = {
   unplanned_day: () => `when the workday starts with no plan`,
   deadline_risk: (t) => `when an important deadline has ≥ ${Math.round(t * 100)}% simulated risk (Guardian may defer low-priority work)`,
   team_hours: (t) => `from Thursday, when a paid worker is below ${Math.round(t * 100)}% of their expected weekly hours`,
-  empty_estimate: () => `when tasks lack estimates`,
 };
 
 export function RitualsView() {
@@ -55,7 +54,7 @@ export function RitualsView() {
               <div className="n">{w.name}</div>
               <div className="d">Nudges you {WATCH_HELP[w.kind](w.threshold)} · at most every {Math.round(w.cooldownMin / 60)}h{w.lastFiredAt ? ` · last ${new Date(w.lastFiredAt).toLocaleString()}` : ""}</div>
             </div>
-            {w.kind !== "unplanned_day" && w.kind !== "empty_estimate" && (
+            {w.kind !== "unplanned_day" && (
               <input className="input" type="number" step={w.kind === "stale_people" ? 0.05 : 1} style={{ width: 90 }} value={w.threshold} onChange={(e) => void saveW(w, { threshold: Number(e.target.value) })} aria-label={`${w.name} threshold`} />
             )}
             <button className="switch" role="switch" aria-checked={w.enabled} onClick={() => void saveW(w, { enabled: !w.enabled })} aria-label={`${w.name} enabled`} />

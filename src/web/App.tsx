@@ -47,7 +47,8 @@ export function App() {
       if (idx >= 1 && idx <= NAV.length) navigate(NAV[idx - 1]!.key);
     };
     window.addEventListener("keydown", onKey);
-    if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("/sw.js").catch(() => {});
+    const secure = location.protocol === "https:" || ["localhost", "127.0.0.1"].includes(location.hostname);
+    if ("serviceWorker" in navigator && secure && location.port !== "5173") navigator.serviceWorker.register("/sw.js").catch(() => {});
     return () => {
       off();
       window.removeEventListener("keydown", onKey);

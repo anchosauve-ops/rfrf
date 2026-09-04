@@ -230,8 +230,6 @@ export class Scheduler {
           origin: w.id,
         };
       }
-      case "empty_estimate":
-        return undefined;
     }
   }
 }

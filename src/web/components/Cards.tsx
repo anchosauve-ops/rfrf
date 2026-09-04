@@ -11,7 +11,7 @@ export function EnergyDot({ e }: { e?: string }) {
   return e ? <i className={`dot ${e}`} title={e} /> : null;
 }
 
-export function TaskLine({ t, now, tz, onDone }: { t: Task; now: Date; tz?: string; onDone?: () => void }) {
+function TaskLine({ t, now, tz, onDone }: { t: Task; now: Date; tz?: string; onDone?: () => void }) {
   const [busy, setBusy] = useState(false);
   const done = async () => {
     if (t.status !== "open" || busy) return;
@@ -38,7 +38,7 @@ export function TaskLine({ t, now, tz, onDone }: { t: Task; now: Date; tz?: stri
   );
 }
 
-export function EventLine({ e, tz }: { e: Event; tz?: string }) {
+function EventLine({ e, tz }: { e: Event; tz?: string }) {
   return (
     <li>
       <span className="time">{e.allDay ? "all day" : fmtTime(e.start, tz)}</span>
@@ -48,7 +48,7 @@ export function EventLine({ e, tz }: { e: Event; tz?: string }) {
   );
 }
 
-export function PlanLines({ blocks, tz, now }: { blocks: PlanBlock[]; tz?: string; now: Date }) {
+function PlanLines({ blocks, tz, now }: { blocks: PlanBlock[]; tz?: string; now: Date }) {
   return (
     <ul>
       {blocks

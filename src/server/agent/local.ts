@@ -28,7 +28,7 @@ function pick<T>(arr: T[], seed: number): T {
 }
 
 /** "add X, and what's overdue?" → two intents, when the tail is unmistakably its own command. */
-export function splitCompound(message: string, ctx: { now: Date; tz: string; workdayEndMin?: number }): string[] {
+function splitCompound(message: string, ctx: { now: Date; tz: string; workdayEndMin?: number }): string[] {
   const m = /^(.*?[^,]),?\s+(?:and|then|also)\s+(.+)$/i.exec(message.trim());
   if (!m) return [message];
   const head = m[1]!.trim();

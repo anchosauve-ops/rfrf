@@ -74,7 +74,7 @@ export function fitCalibration(outcomes: Outcome[], prefs: Preferences, now = ne
 }
 
 /** Build a 2-hour-window energy curve from where each kind of work actually happens. */
-export function proposeCurve(hourByEnergy: Record<Energy, number[]>, prefs: Preferences): EnergySlot[] {
+function proposeCurve(hourByEnergy: Record<Energy, number[]>, prefs: Preferences): EnergySlot[] {
   const startH = Math.floor(prefs.workdayStartMin / 60);
   const endH = Math.ceil(prefs.workdayEndMin / 60);
   const slots: EnergySlot[] = [];
@@ -145,7 +145,7 @@ export function describeCalibration(cal: Calibration): string[] {
   return out;
 }
 
-export function fmtHour(h: number): string {
+function fmtHour(h: number): string {
   const ampm = h < 12 ? "am" : "pm";
   const hh = h % 12 === 0 ? 12 : h % 12;
   return `${hh}${ampm}`;
