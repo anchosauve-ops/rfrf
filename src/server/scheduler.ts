@@ -214,6 +214,22 @@ export class Scheduler {
           origin: w.id,
         };
       }
+      case "team_hours": {
+        // Thursday onward: a paid worker with an expectation who is below threshold × expected for the week
+        const z = toZoned(now, tz);
+        if (z.weekday < 4) return undefined;
+        const light = this.svc.teamSummary(now).filter((r) => r.person.expectedWeeklyHours && r.week.totalMinutes < r.person.expectedWeeklyHours * 60 * w.threshold);
+        if (!light.length) return undefined;
+        const r = light[0]!;
+        return {
+          title: `${r.person.name} is at ${Math.round((r.week.totalMinutes / 60) * 10) / 10}h this week`,
+          body: `Expected about ${r.person.expectedWeeklyHours}h. ${r.lastLog ? `Last logged day: ${r.lastLog}.` : "No hours logged yet."} Could be a light week, or Timeproof hasn't been imported.`,
+          level: "suggest",
+          cards: [{ type: "payroll", payroll: r.week }],
+          actions: [{ label: `Import ${r.person.name}'s Timeproof`, command: `import timeproof for ${r.person.name}: `, style: "primary" }, { label: "Team", command: "team" }],
+          origin: w.id,
+        };
+      }
       case "empty_estimate":
         return undefined;
     }

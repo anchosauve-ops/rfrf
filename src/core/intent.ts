@@ -54,6 +54,11 @@ export type Intent =
   | { type: "undo" }
   | { type: "create_goal"; title: string; horizon: "week" | "month" | "quarter" | "year"; targetDate?: string }
   | { type: "list_goals" }
+  | { type: "log_work"; name: string; text: string }
+  | { type: "import_worklog"; name?: string; text: string }
+  | { type: "payroll"; name?: string; period?: string }
+  | { type: "set_rate"; name: string; rate: number; currency?: string; expectedWeeklyHours?: number }
+  | { type: "team" }
   | { type: "help" }
   | { type: "chat"; text: string };
 
@@ -176,6 +181,20 @@ export function parseIntent(raw: string, ctx: IntentContext): ParsedIntent {
     return { intent: { type: "brief", kind: "evening" }, confidence: 0.95, trace: ["brief:evening"] };
   if (/^(?:weekly\s+(?:review|retro|brief)|retro|how\s+was\s+(?:my|the)\s+week|week\s+in\s+review)$/i.test(lower))
     return { intent: { type: "brief", kind: "weekly" }, confidence: 0.95, trace: ["brief:weekly"] };
+
+  // ---------- Team: rates, hours, payroll ----------
+  {
+    const rate = /^(?:set\s+)?([A-Z][\w-]+(?:\s+[A-Z][\w-]+)*)(?:['’]s)?\s+(?:hourly\s+)?rate\s+(?:is|=|to|at)?\s*\$?\s*(\d+(?:\.\d+)?)\s*(usd|php|eur|gbp|aud|cad)?(?:\s*(?:\/|an?|per)\s*h(?:ou)?r)?(?:.*?(\d+)\s*h(?:ou)?rs?\s*(?:a|per|\/)\s*week)?/i.exec(text) ?? /^(?:pay|paying)\s+([A-Z][\w'-]+)\s+\$?(\d+(?:\.\d+)?)\s*(usd|php|eur|gbp|aud|cad)?\s*(?:\/|an?|per)\s*h(?:ou)?r/i.exec(text);
+    if (rate) return { intent: { type: "set_rate", name: rate[1]!, rate: Number(rate[2]), currency: rate[3]?.toUpperCase(), expectedWeeklyHours: rate[4] ? Number(rate[4]) : undefined }, confidence: 0.9, trace: ["set_rate"] };
+    const imp = /^(?:import|paste|load)\s+(?:timeproof|time\s*proof|hours|worklog|work\s+log)(?:\s+for\s+([A-Za-z][\w-]+(?:\s+[A-Z][\w-]+)*))?\s*[:-]?\s*([\s\S]+)$/i.exec(text) ?? /^([A-Z][\w-]+)(?:['’]s)?\s+timeproof\s*[:-]?\s*([\s\S]*\d{1,2}:\d{2}[\s\S]*)$/i.exec(text);
+    if (imp) return { intent: { type: "import_worklog", name: imp[1] || undefined, text: imp[2]! }, confidence: 0.9, trace: ["import_worklog"] };
+    const log = /^(?:log|record|add)\s+(?:hours\s+(?:for\s+)?)?([A-Z][\w'-]+(?:\s+[A-Z][\w'-]+)*)\s+(.+)$/i.exec(text) ?? /^([A-Z][\w'-]+)\s+(?:worked|logged|did)\s+(.+)$/.exec(text);
+    if (log && /\d{1,2}:\d{2}|\d+\s*h|\d+\s*m/i.test(log[2]!)) return { intent: { type: "log_work", name: log[1]!, text: log[2]! }, confidence: 0.85, trace: ["log_work"] };
+    const STOP = "this|last|all|everything|total|hours|worked|logged|payroll|for|in|during|week|month|time|january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec";
+    const pay = new RegExp(`^(?:payroll|pay|what\\s+do\\s+i\\s+owe|how\\s+much\\s+do\\s+i\\s+owe|hours|how\\s+many\\s+hours)(?:\\s+(?:for|to|did|has|have))?\\s*((?!(?:${STOP})\\b)[A-Za-z][\\w-]*(?:\\s+(?!(?:${STOP})\\b)[A-Z][\\w-]*)*)?(?:['’]s)?(?:\\s+(?:hours|worked|logged|payroll))?(?:\\s+(?:for|in|during))?\\s*(this\\s+week|last\\s+week|this\\s+month|last\\s+month|all\\s+time|everything|total|(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)(?:\\s+\\d{4})?)?\\??$`, "i").exec(text);
+    if (pay && (pay[1] || pay[2] || /payroll|owe/i.test(text))) return { intent: { type: "payroll", name: pay[1] || undefined, period: pay[2] || undefined }, confidence: 0.85, trace: ["payroll"] };
+    if (/^(?:team|my\s+team|workers|who\s+works\s+for\s+me|team\s+hours)\??$/i.test(lower)) return { intent: { type: "team" }, confidence: 0.9, trace: ["team"] };
+  }
 
   // ---------- Symbiosis: council, futures, mirror, goals, undo ----------
   if (/^(?:convene\s+(?:the\s+)?council|council|deliberate|second\s+opinions?|what\s+would\s+the\s+council\s+say|challenge\s+(?:my|this)\s+(?:plan|week|day)|critique\s+(?:my|this)\s+(?:plan|week|day))(?:\s+(?:on|about)\s+(.+))?$/i.test(lower)) {

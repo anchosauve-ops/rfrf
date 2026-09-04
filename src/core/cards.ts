@@ -1,5 +1,6 @@
 import type { Card } from "./types.js";
 import { briefToText } from "./brief.js";
+import { fmtHM, formatMoney } from "./worklog.js";
 
 /** Plain text fallback for any card — used for voice, transcripts and the model's own reading. */
 export function cardToText(card: Card): string {
@@ -40,6 +41,10 @@ export function cardToText(card: Card): string {
       return `Goals:\n${card.goals.map((g) => `- ${g.title} (${g.horizon}, ${Math.round(g.progress * 100)}%${g.targetDate ? `, by ${g.targetDate.slice(0, 10)}` : ""})`).join("\n")}`;
     case "ledger":
       return `Ledger:\n${card.entries.map((e) => `- ${e.createdAt.slice(0, 16)} ${e.summary}${e.undoneAt ? " (undone)" : ""}`).join("\n")}`;
+    case "payroll": {
+      const p = card.payroll;
+      return `Payroll for ${p.name}, ${p.from} to ${p.to} at ${formatMoney(p.rate, p.currency)}/h: ${fmtHM(p.totalMinutes)} = ${formatMoney(p.amount, p.currency)}\n${p.weeks.map((w) => `- week of ${w.start}: ${fmtHM(w.minutes)} = ${formatMoney(w.amount, p.currency)}`).join("\n")}`;
+    }
   }
 }
 

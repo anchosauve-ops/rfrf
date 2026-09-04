@@ -20,6 +20,7 @@ const HELP = `Here's what I understand without a model:
 - "met Priya, colleague from design, every 2 weeks", "talked to Sam", "who should I reach out to"
 - "focus for 50 on the essay", "what's overdue", "my name is Will", "timezone Europe/Berlin"
 - "goal: ship v1 by October", "my goals", "what's at risk", "convene the council", "mirror", "undo"
+- "Erica's rate is 3.50/hr", "Erica worked 7:04 on aug 31", "import timeproof for Erica: <paste>", "payroll for Erica this month", "team"
 Add an Anthropic API key in Settings and I get a lot smarter.`;
 
 function pick<T>(arr: T[], seed: number): T {
@@ -34,7 +35,7 @@ export function splitCompound(message: string, ctx: { now: Date; tz: string; wor
   const tail = m[2]!.trim();
   const t = parseIntent(tail, ctx);
   const h = parseIntent(head, ctx);
-  const standalone = new Set(["list_tasks", "brief", "plan_day", "schedule_view", "people_touch", "recall", "start_focus", "help", "futures", "council", "mirror", "list_goals"]);
+  const standalone = new Set(["list_tasks", "brief", "plan_day", "schedule_view", "people_touch", "recall", "start_focus", "help", "futures", "council", "mirror", "list_goals", "payroll", "team"]);
   if (t.confidence >= 0.9 && standalone.has(t.intent.type) && h.intent.type !== "chat") return [head, tail];
   return [message];
 }
@@ -174,6 +175,30 @@ async function* runLocalOne(message: string, tools: ToolRegistry, svc: Services,
       break;
     case "list_goals":
       absorb(call("list_goals", {}), "");
+      break;
+    case "set_rate": {
+      absorb(call("upsert_person", { name: i.name, hourly_rate: i.rate, currency: i.currency, expected_weekly_hours: i.expectedWeeklyHours }), "");
+      break;
+    }
+    case "log_work": {
+      // "Erica worked 7:04 on aug 31" / "log Erica 7:04 yesterday"
+      const hm = /(\d{1,3}:\d{2}|\d+(?:\.\d+)?\s*h(?:ou)?rs?(?:\s*\d+\s*m(?:in)?s?)?|\d+\s*m(?:in(?:ute)?s?)?)/i.exec(i.text);
+      const dateText = i.text.replace(hm?.[0] ?? "", "").replace(/^\s*(?:on|for)\s+/i, "").trim() || "today";
+      absorb(call("log_work", { person: i.name, date: dateText, hours: hm?.[0] ?? "" }), "");
+      break;
+    }
+    case "import_worklog": {
+      const paid = svc.repo.listPeople().filter((p) => p.hourlyRate);
+      const name = i.name ?? (paid.length === 1 ? paid[0]!.name : undefined);
+      if (!name) { text = "Whose hours are these? Say “import timeproof for Erica: …”."; break; }
+      absorb(call("import_worklog", { person: name, text: i.text }), "");
+      break;
+    }
+    case "payroll":
+      absorb(call("payroll", { person: i.name, period: i.period }), "");
+      break;
+    case "team":
+      absorb(call("team", {}), "");
       break;
     case "chat": {
       // Not a command. Mine it for memories, then answer honestly.

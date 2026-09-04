@@ -38,6 +38,7 @@ Pure TypeScript. No Node APIs, no DOM, no network. Everything is a function of i
 - **`learning.ts`** — `fitCalibration(outcomes)`: per-energy estimate bias (log-median shrunk toward priors with 4 pseudo-observations), hour-of-day completion propensity, peak hours per energy, plan adherence, slip rates by energy and tag, and a proposed energy curve once ≥ 25 outcomes exist. `calibratedEstimate` is what the planner and the simulator use.
 - **`simulate.ts`** — `simulateFutures`: seeded (mulberry32) Monte Carlo. Per run: log-normal duration per task around the calibrated estimate (σ 0.35), daily interruption loss (learned from plan adherence), tasks poured deadline-then-priority into each day's free capacity (workday − meetings − buffers, × 0.85 slack). Outputs per-task `pMiss` and expected day, per-day expected load, capacity ratio, and interventions (defer / shrink / win back meeting time) each re-simulated and ranked by risk removed.
 - **`council.ts`** — `localCouncil`: five deterministic critics with charters (strategist, realist, guardian, connector, editor), each emitting findings with severity, claim, evidence and an enacting command; sorted critical → note, with a synthesis and a single decision.
+- **`worklog.ts`** — work-log parsing (dated lines, or a Timeproof month copied as text; week and month totals detected from the grid structure and arithmetic), Sunday–Saturday payroll with cents, period words ("last week", "august", "all time").
 - **`goals.ts`** — alignment (focus minutes per goal from plan and outcomes), derived progress from linked tasks, pace against elapsed time.
 
 ## server (`src/server`)
@@ -51,7 +52,7 @@ Pure TypeScript. No Node APIs, no DOM, no network. Everything is a function of i
 - **`agent/index.ts`** — picks the brain by key presence; on typed API errors falls back to Local Mind for the turn and reports why. `council()` runs the Claude council when a key exists and falls back to the local one.
 - **`agent/council.ts`** — Claude council: five parallel `messages.create` calls (one per perspective, structured JSON output, at most 3 evidence-backed findings each) over one evidence pack, then a chair call that writes the synthesis and the decision.
 - **`scheduler.ts`** — 60s tick. Rituals fire when `nextOccurrence(rule, lastRunAt) <= now`; the morning ritual also builds the day plan; the nightly reflection ritual writes learned insights to memory. Watchers evaluate with per-watcher cooldowns. The `deadline_risk` watcher runs the simulator; in Guardian autonomy it applies the best *defer* intervention (never a shrink), records it in the ledger, replans, and nudges with an Undo. Both write `Nudge`s and publish on the `Bus`.
-- **`app.ts`** — Hono routes; `POST /api/agent` streams `AgentEvent`s over SSE; `GET /api/stream` fans the bus to every open tab; serves `dist/web` in production with SPA fallback. `seedDemo` builds a believable first day.
+- **`app.ts`** — Hono routes; `/api/worklog/import` is the one route a foreign origin (onlinejobs.ph, via the bookmarklet in `public/timeproof.js`) may call, gated by an install-scoped token compared in constant time; `POST /api/agent` streams `AgentEvent`s over SSE; `GET /api/stream` fans the bus to every open tab; serves `dist/web` in production with SPA fallback. `seedDemo` builds a believable first day.
 
 ## web (`src/web`)
 

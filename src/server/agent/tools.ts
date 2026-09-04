@@ -27,9 +27,12 @@ import {
   type Task,
   type Event,
   type Goal,
+  fmtHM,
+  formatMoney,
+  parseHM,
 } from "../../core/index.js";
 
-export type MutatedEntity = "task" | "event" | "memory" | "person" | "nudge" | "plan" | "prefs" | "goal" | "ledger";
+export type MutatedEntity = "task" | "event" | "memory" | "person" | "nudge" | "plan" | "prefs" | "goal" | "ledger" | "worklog";
 
 export interface ToolResult {
   text: string;
@@ -389,17 +392,17 @@ export function buildTools(svc: Services) {
       def: {
         name: "upsert_person",
         description: "Create or update a person. cadence_days = how often they want to be in touch.",
-        input_schema: { type: "object", properties: { name: { type: "string" }, relation: { type: "string" }, notes: { type: "string" }, cadence_days: { type: "integer" }, birthday: { type: "string", description: "MM-DD" }, tags: { type: "array", items: { type: "string" } } }, required: ["name"] },
+        input_schema: { type: "object", properties: { name: { type: "string" }, relation: { type: "string" }, notes: { type: "string" }, cadence_days: { type: "integer" }, birthday: { type: "string", description: "MM-DD" }, tags: { type: "array", items: { type: "string" } }, hourly_rate: { type: "number", description: "Pay rate per hour if they work for the person" }, currency: { type: "string", description: "ISO 4217, default USD" }, expected_weekly_hours: { type: "number" } }, required: ["name"] },
       },
       run: (input) => {
         const name = str(input.name);
         if (!name) return { text: "A person needs a name.", ok: false };
         const existing = repo.findPerson(name);
-        const patch = { relation: str(input.relation), notes: str(input.notes), cadenceDays: num(input.cadence_days), birthday: str(input.birthday), tags: arr(input.tags) };
+        const patch = { relation: str(input.relation), notes: str(input.notes), cadenceDays: num(input.cadence_days), birthday: str(input.birthday), tags: arr(input.tags), hourlyRate: num(input.hourly_rate), currency: str(input.currency)?.toUpperCase().slice(0, 3), expectedWeeklyHours: num(input.expected_weekly_hours) };
         const p = existing
-          ? repo.updatePerson(existing.id, { ...(patch.relation && { relation: patch.relation }), ...(patch.notes && { notes: existing.notes ? `${existing.notes}\n${patch.notes}` : patch.notes }), ...(patch.cadenceDays && { cadenceDays: patch.cadenceDays }), ...(patch.birthday && { birthday: patch.birthday }), ...(patch.tags.length && { tags: [...new Set([...existing.tags, ...patch.tags])] }) })!
+          ? repo.updatePerson(existing.id, { ...(patch.relation && { relation: patch.relation }), ...(patch.notes && { notes: existing.notes ? `${existing.notes}\n${patch.notes}` : patch.notes }), ...(patch.cadenceDays && { cadenceDays: patch.cadenceDays }), ...(patch.birthday && { birthday: patch.birthday }), ...(patch.tags.length && { tags: [...new Set([...existing.tags, ...patch.tags])] }), ...(patch.hourlyRate !== undefined && { hourlyRate: patch.hourlyRate }), ...(patch.currency && { currency: patch.currency }), ...(patch.expectedWeeklyHours !== undefined && { expectedWeeklyHours: patch.expectedWeeklyHours }) })!
           : repo.createPerson({ name, ...patch, tags: patch.tags });
-        return { text: `${existing ? "Updated" : "Added"} ${p.name}${p.relation ? ` (${p.relation})` : ""}${p.cadenceDays ? `, every ${p.cadenceDays} days` : ""}.`, cards: [{ type: "people", title: existing ? "Updated" : "New person", people: [p] }], mutated: ["person"] };
+        return { text: `${existing ? "Updated" : "Added"} ${p.name}${p.relation ? ` (${p.relation})` : ""}${p.cadenceDays ? `, every ${p.cadenceDays} days` : ""}${p.hourlyRate ? `, ${formatMoney(p.hourlyRate, p.currency ?? "USD")}/h` : ""}.`, cards: [{ type: "people", title: existing ? "Updated" : "New person", people: [p] }], mutated: ["person"] };
       },
     },
 
@@ -502,6 +505,76 @@ export function buildTools(svc: Services) {
         if (!patch) return { text: `I don't have a preference called "${key}".`, ok: false };
         repo.setPrefs(patch);
         return { text: `Set ${key} to ${value}.`, mutated: ["prefs"] };
+      },
+    },
+
+    log_work: {
+      def: {
+        name: "log_work",
+        description: "Record hours a worker put in on a day (e.g. from OnlineJobs Timeproof). Dates may be natural language; hours as 'HH:MM', '7h 4m' or minutes. Upserts by day.",
+        input_schema: { type: "object", properties: { person: { type: "string" }, date: { type: "string" }, hours: { type: "string", description: "'07:04', '7h 4m', '424m'" }, note: { type: "string" } }, required: ["person", "date", "hours"] },
+      },
+      run: (input, now) => {
+        const name = str(input.person);
+        const p = name ? repo.findPerson(name) : undefined;
+        if (!p) return { text: `I don't know anyone called “${name ?? ""}”. Add them first (“add person Erica, worker, rate 3.50/hr”).`, ok: false };
+        const when = resolveWhen(input.date, now);
+        const minutes = parseHM(str(input.hours) ?? "");
+        if (!when || minutes === undefined) return { text: "I need a date and hours like 07:04.", ok: false };
+        const date = dayKey(when, tz());
+        const r = svc.importWorklog(p, [{ date, minutes }], "manual", now);
+        const pay = svc.payroll(p, "this week", now);
+        return { text: `Logged ${fmtHM(minutes)} for ${p.name} on ${date}${r.updated ? " (replaced the earlier entry)" : ""}. This week: ${fmtHM(pay.totalMinutes)}${p.hourlyRate ? ` = ${formatMoney(pay.amount, pay.currency)}` : ""}.`, cards: p.hourlyRate ? [{ type: "payroll", payroll: pay }] : [], mutated: ["worklog"] };
+      },
+    },
+
+    import_worklog: {
+      def: {
+        name: "import_worklog",
+        description: "Import many days of a worker's hours at once from pasted text: a Timeproof calendar copied as text, or lines like 'Aug 31 07:04'. Week and month totals in the paste are detected and skipped.",
+        input_schema: { type: "object", properties: { person: { type: "string" }, text: { type: "string" } }, required: ["person", "text"] },
+      },
+      run: (input, now) => {
+        const name = str(input.person);
+        const p = name ? repo.findPerson(name) : undefined;
+        if (!p) return { text: `I don't know anyone called “${name ?? ""}”. Add them first.`, ok: false };
+        const r = svc.importWorklogText(p, str(input.text) ?? "", "paste", now);
+        if (!r.parsedDays.length) return { text: "I couldn't find any day/hours pairs in that text. Lines like “Aug 31 07:04” work, and so does the whole Timeproof month copied as text.", ok: false };
+        const pay = svc.payroll(p, "this month", now);
+        return {
+          text: `Imported ${r.parsedDays.length} day${r.parsedDays.length === 1 ? "" : "s"} for ${p.name} (${fmtHM(r.minutes)}): ${r.added} new, ${r.updated} updated, ${r.unchanged} unchanged${r.dropped.length ? `; skipped ${r.dropped.length} total${r.dropped.length === 1 ? "" : "s"} (${r.dropped.map((d) => d.reason).join(", ")})` : ""}.`,
+          cards: p.hourlyRate ? [{ type: "payroll", payroll: pay }] : [],
+          mutated: ["worklog"],
+        };
+      },
+    },
+
+    payroll: {
+      def: {
+        name: "payroll",
+        description: "Hours and pay for a worker over a period ('this week', 'last week', 'this month', 'august', 'all time', or 'YYYY-MM-DD to YYYY-MM-DD'). Weeks run Sunday to Saturday.",
+        input_schema: { type: "object", properties: { person: { type: "string" }, period: { type: "string" } } },
+      },
+      run: (input, now) => {
+        const name = str(input.person);
+        const paid = repo.listPeople().filter((x) => x.hourlyRate);
+        const p = name ? repo.findPerson(name) : paid.length === 1 ? paid[0] : undefined;
+        if (!p) return { text: paid.length ? `Which worker? ${paid.map((x) => x.name).join(", ")}.` : "Nobody has an hourly rate yet. Say “Erica's rate is 3.50/hr”.", ok: false };
+        if (!p.hourlyRate) return { text: `${p.name} has no hourly rate yet. Say “${p.name}'s rate is 3.50/hr”.`, ok: false };
+        const pay = svc.payroll(p, str(input.period), now);
+        return {
+          text: `${p.name}, ${pay.label} (${pay.from} to ${pay.to}): ${fmtHM(pay.totalMinutes)} at ${formatMoney(pay.rate, pay.currency)}/h = ${formatMoney(pay.amount, pay.currency)}.${pay.weeks.length > 1 ? `\n${pay.weeks.map((w) => `- week of ${w.start}: ${fmtHM(w.minutes)} = ${formatMoney(w.amount, pay.currency)}`).join("\n")}` : ""}`,
+          cards: [{ type: "payroll", payroll: pay }],
+        };
+      },
+    },
+
+    team: {
+      def: { name: "team", description: "Everyone with an hourly rate: hours this week and month and what that costs.", input_schema: { type: "object", properties: {} } },
+      run: (_input, now) => {
+        const rows = svc.teamSummary(now);
+        if (!rows.length) return { text: "No paid workers yet. Say “Erica's rate is 3.50/hr” to start tracking someone.", cards: [] };
+        return { text: rows.map((r) => `- ${r.summary}`).join("\n"), cards: rows.map((r) => ({ type: "payroll" as const, payroll: r.week })) };
       },
     },
 

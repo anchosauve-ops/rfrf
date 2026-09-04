@@ -101,8 +101,45 @@ export interface Person {
   /** Desired days between touches; the agent nudges when exceeded. */
   cadenceDays?: number;
   birthday?: string; // "MM-DD"
+  /** Someone who works for you: pay rate and expectations drive payroll and the team watcher. */
+  hourlyRate?: number;
+  currency?: string; // ISO 4217, default USD
+  expectedWeeklyHours?: number;
   createdAt: ISO;
   updatedAt: ISO;
+}
+
+// ---------- Work logs (hours a worker put in, per day) ----------
+export type WorkLogSource = "timeproof" | "paste" | "manual" | "import";
+export interface WorkLog {
+  id: ID;
+  personId: ID;
+  /** YYYY-MM-DD in the viewer's zone (Timeproof shows the employer's zone) */
+  date: string;
+  minutes: number;
+  source: WorkLogSource;
+  note?: string;
+  importedAt: ISO;
+}
+export interface PayrollWeek {
+  start: string; // Sunday YYYY-MM-DD
+  end: string; // Saturday YYYY-MM-DD
+  minutes: number;
+  amount: number;
+}
+export interface Payroll {
+  personId: ID;
+  name: string;
+  from: string;
+  to: string;
+  rate: number;
+  currency: string;
+  days: { date: string; minutes: number }[];
+  weeks: PayrollWeek[];
+  totalMinutes: number;
+  amount: number;
+  expectedWeeklyHours?: number;
+  generatedAt: ISO;
 }
 
 // ---------- Rituals & watchers ----------
@@ -125,6 +162,7 @@ export type WatcherKind =
   | "unplanned_day"
   | "deadline_approaching"
   | "deadline_risk"
+  | "team_hours"
   | "empty_estimate";
 
 export interface Watcher {
@@ -254,7 +292,8 @@ export type Card =
   | { type: "council"; verdict: CouncilVerdict }
   | { type: "calibration"; calibration: Calibration }
   | { type: "goals"; goals: Goal[]; alignment?: { goalId: ID; title: string; focusMin: number; share: number }[] }
-  | { type: "ledger"; entries: LedgerEntry[] };
+  | { type: "ledger"; entries: LedgerEntry[] }
+  | { type: "payroll"; payroll: Payroll };
 
 // ---------- Goals ----------
 export type GoalHorizon = "week" | "month" | "quarter" | "year";
@@ -404,7 +443,7 @@ export type AgentEvent =
   | { type: "tool_start"; name: string; input: unknown }
   | { type: "tool_end"; name: string; ok: boolean; summary: string }
   | { type: "card"; card: Card }
-  | { type: "mutation"; entity: "task" | "event" | "memory" | "person" | "nudge" | "plan" | "prefs" | "goal" | "ledger" }
+  | { type: "mutation"; entity: "task" | "event" | "memory" | "person" | "nudge" | "plan" | "prefs" | "goal" | "ledger" | "worklog" }
   | { type: "done"; turnId: ID; text: string; cards: Card[] }
   | { type: "error"; message: string };
 

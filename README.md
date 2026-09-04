@@ -39,6 +39,18 @@ Most "AI assistants" are the same on day 300 as on day 1. Kairos is built around
 
 You control every part of it: calibration on or off, curve auto-tuning on or off, autonomy from “ask” to “guardian”. The Mirror is the product's conscience.
 
+## Team and payroll
+
+If people work for you, Kairos keeps their hours and what you owe them, and it connects to **OnlineJobs.ph Timeproof** three ways that all land in the same ledger:
+
+- **Bookmarklet.** Settings → Connections gives you a “Send to Kairos” button. Drag it to your bookmarks bar, open a worker's Timeproof month, click. Day totals are read off the calendar (week and month totals are recognized and skipped) and pushed to your local Kairos with a private token. Re-running a month is idempotent and picks up corrections.
+- **Paste.** Select the whole Timeproof calendar, copy, and say “import timeproof for Erica:” followed by the paste. The parser understands the calendar grid and tells day totals from week and month totals arithmetically.
+- **Words.** “Erica's rate is 3.50/hr”, “Erica worked 7:04 on Aug 31”, “payroll for Erica this month”, “what do I owe Erica”, “team”.
+
+![Team](docs/screenshots/team.png)
+
+Payroll weeks run Sunday to Saturday to match Timeproof. Rates are per person with a currency; the morning brief and weekly retro carry a Team line, the People view shows each worker's week, month and all-time, and a watcher speaks up from Thursday when a worker's week is running light against their expected hours.
+
 | Futures | Mirror |
 |---|---|
 | ![Futures](docs/screenshots/futures.png) | ![Mirror](docs/screenshots/mirror.png) |
@@ -127,6 +139,9 @@ focus for 50 on the essay           evening review
 goal: ship v1 by October            my goals
 what's at risk                      convene the council
 what have you learned about me      undo
+Erica's rate is 3.50/hr             Erica worked 7:04 on Aug 31
+import timeproof for Erica: <paste> payroll for Erica this month
+what do I owe Erica                 team
 ```
 
 Keyboard: `⌘K` or `/` focuses the command bar, `1–7` switch views, `Esc` collapses the thread.
@@ -136,7 +151,7 @@ Keyboard: `⌘K` or `/` focuses the command bar, `1–7` switch views, `Esc` col
 ```bash
 pnpm dev        # both servers with hot reload
 pnpm lint       # eslint (typescript-eslint + react-hooks)
-pnpm test       # 140 tests: parser, planner, memory, learning, futures, council, goals, server, scheduler, hardening, migrations, regressions, mocked Claude brain
+pnpm test       # 152 tests: parser, planner, memory, learning, futures, council, goals, worklog/payroll, server, scheduler, hardening, migrations, regressions, mocked Claude brain
 pnpm e2e        # browser smoke test against the production build (Chromium)
 pnpm typecheck  # web + server
 pnpm build      # web bundle + server transpile
@@ -156,6 +171,7 @@ Everything the UI does goes through `/api`. Highlights:
 - `GET /api/mirror` · `POST /api/mirror/adopt-curve` — the learned model and what to do with it
 - `GET /api/ledger` · `POST /api/ledger/:id/undo` — autonomous actions, reversible
 - CRUD on `/api/goals`
+- `GET /api/team` · `GET /api/people/:id/payroll?period=` · `POST /api/worklog/import` (token-gated for foreign origins) — hours and pay
 - `GET /api/stream` — live channel: nudges, rituals, mutations
 - CRUD on `/api/tasks`, `/api/events`, `/api/memories`, `/api/people`, `/api/rituals`, `/api/watchers`, `/api/nudges`
 - `GET /api/export` · `POST /api/import`
