@@ -13,7 +13,6 @@
 import type { Calibration, Energy, Event, Plan, PlanBlock, Preferences, Task } from "./types.js";
 import { calibratedEstimate } from "./learning.js";
 import { addMinutes, dayKey, minuteOfDay, minutesBetween, setTime, startOfDay, toZoned, sameDay } from "./tz.js";
-import { uid } from "./ids.js";
 
 export interface PlannerInput {
   date: Date;
@@ -131,6 +130,8 @@ export function planDay(input: PlannerInput): Plan {
   if (isToday && now > windowStart) windowStart = roundUp(now, 5);
 
   const blocks: PlanBlock[] = [];
+  let seq = 0;
+  const uid = (prefix: string) => `${prefix}_${key}_${String(++seq).padStart(3, "0")}`; // deterministic for identical inputs
   let free: Interval[] = windowStart < windowEnd ? [{ start: windowStart, end: windowEnd }] : [];
 
   // --- Events (fixed) ---

@@ -150,8 +150,9 @@ export function goalPatch(raw: Raw): Partial<Goal> {
   });
 }
 
-export function ritualPatch(raw: Raw): Partial<Ritual> {
-  const p: Partial<Ritual> = compact({
+export type RitualPatch = Omit<Partial<Ritual>, "rule"> & { rule?: Partial<Ritual["rule"]> };
+export function ritualPatch(raw: Raw): RitualPatch {
+  const p: RitualPatch = compact({
     name: str(raw.name, 100, "name"),
     enabled: bool(raw.enabled, "enabled"),
     prompt: clear(nullableStr(raw.prompt, MAX_TEXT, "prompt")),
@@ -161,7 +162,7 @@ export function ritualPatch(raw: Raw): Partial<Ritual> {
     const time = str(r.time, 5, "rule.time");
     if (time !== undefined && !/^\d{2}:\d{2}$/.test(time)) throw new ValidationError("rule.time must be HH:MM");
     p.rule = compact({
-      freq: oneOf(r.freq, "rule.freq", ["daily", "weekly", "monthly", "yearly"] as const) ?? "daily",
+      freq: oneOf(r.freq, "rule.freq", ["daily", "weekly", "monthly", "yearly"] as const),
       interval: int(r.interval, "rule.interval", 1, 52),
       byWeekday: Array.isArray(r.byWeekday) ? r.byWeekday.filter((d): d is number => typeof d === "number" && d >= 0 && d <= 6) : undefined,
       byMonthDay: int(r.byMonthDay, "rule.byMonthDay", 1, 31),

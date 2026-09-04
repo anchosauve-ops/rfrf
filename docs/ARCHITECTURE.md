@@ -95,7 +95,7 @@ complete task ─► Outcome (estimate, actual, hour, slipped, onPlan)
 
 ## Testing
 
-`vitest`, 113 tests: chrono (zones, DST, ranges, recurrence), intent (every intent family), planner (no overlaps, buffers, pins, splits, energy placement, weekend protection), memory (ranking, decay, dedupe, extraction), rrule, brief, learning (priors, bias, peaks, proposed curve), futures (determinism, light vs impossible weeks, meetings consuming capacity, calibration raising risk, ranked interventions), council and goals, and server (REST, SSE, agent turns, scheduler cooldowns, export/import idempotence, key → mode, goals CRUD, outcome recording, futures, council, guardian intervention + undo, reflection dedupe).
+`vitest`, 140 tests: chrono (zones, DST, ranges, recurrence), intent (every intent family), planner (no overlaps, buffers, pins, splits, energy placement, weekend protection), memory (ranking, decay, dedupe, extraction), rrule, brief, the Claude brain against a mocked client (tool loop, request shape per model, refusal, pause_turn, council structured output, fallback to Local Mind), regressions from the final review, hardening (validation, secrets, limits, backups, migrations), learning (priors, bias, peaks, proposed curve), futures (determinism, light vs impossible weeks, meetings consuming capacity, calibration raising risk, ranked interventions), council and goals, and server (REST, SSE, agent turns, scheduler cooldowns, export/import idempotence, key → mode, goals CRUD, outcome recording, futures, council, guardian intervention + undo, reflection dedupe).
 
 ## Extending
 

@@ -36,6 +36,7 @@ export function fitCalibration(outcomes: Outcome[], prefs: Preferences, now = ne
   const hourCounts = new Array<number>(24).fill(0);
   const hourByEnergy: Record<Energy, number[]> = { deep: new Array(24).fill(0), light: new Array(24).fill(0), admin: new Array(24).fill(0), social: new Array(24).fill(0) };
   for (const o of outcomes) {
+    if (!ENERGIES.includes(o.energy) || !(o.hour >= 0 && o.hour < 24)) continue; // tolerate malformed history
     const weight = Math.max(15, o.actualMin ?? o.estimateMin) / 30; // longer work counts more
     hourCounts[o.hour] = (hourCounts[o.hour] ?? 0) + weight;
     hourByEnergy[o.energy][o.hour] = (hourByEnergy[o.energy][o.hour] ?? 0) + weight;

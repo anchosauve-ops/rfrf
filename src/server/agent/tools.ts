@@ -42,6 +42,10 @@ type Input = Record<string, unknown>;
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() && !Number.isNaN(Number(v)) ? Number(v) : undefined);
 const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+const ENERGIES: readonly Energy[] = ["deep", "light", "admin", "social"];
+const energyOf = (v: unknown, fallback: Energy): Energy => (typeof v === "string" && (ENERGIES as readonly string[]).includes(v) ? (v as Energy) : fallback);
+const priorityOf = (v: unknown, fallback: Priority): Priority => { const n = num(v); return n === undefined ? fallback : (Math.min(4, Math.max(1, Math.round(n))) as Priority); };
+const estimateOf = (v: unknown): number | undefined => { const n = num(v); return n === undefined ? undefined : Math.min(24 * 60, Math.max(5, Math.round(n))); };
 
 function fmtTask(t: Task, tz: string): string {
   const bits = [t.title];
@@ -127,9 +131,9 @@ export function buildTools(svc: Services) {
           notes: str(input.notes),
           due: due?.toISOString(),
           pinnedStart: resolveWhen(input.pinned_start, now)?.toISOString(),
-          estimateMin: num(input.estimate_min),
-          priority: (num(input.priority) as Priority | undefined) ?? 3,
-          energy: (str(input.energy) as Energy | undefined) ?? guessEnergy(title),
+          estimateMin: estimateOf(input.estimate_min),
+          priority: priorityOf(input.priority, 3),
+          energy: energyOf(input.energy, guessEnergy(title)),
           tags: arr(input.tags),
           project: str(input.project),
           peopleIds: linkPeople(arr(input.people), title),
@@ -173,9 +177,9 @@ export function buildTools(svc: Services) {
         if (input.due !== undefined) patch.due = resolveWhen(input.due, now)?.toISOString();
         if (input.pinned_start !== undefined) patch.pinnedStart = resolveWhen(input.pinned_start, now)?.toISOString();
         if (input.snoozed_until !== undefined) patch.snoozedUntil = resolveWhen(input.snoozed_until, now)?.toISOString();
-        if (num(input.estimate_min)) patch.estimateMin = num(input.estimate_min);
-        if (num(input.priority)) patch.priority = num(input.priority) as Priority;
-        if (str(input.energy)) patch.energy = str(input.energy) as Energy;
+        if (estimateOf(input.estimate_min)) patch.estimateMin = estimateOf(input.estimate_min);
+        if (num(input.priority) !== undefined) patch.priority = priorityOf(input.priority, t.priority);
+        if (str(input.energy)) patch.energy = energyOf(input.energy, t.energy);
         if (input.clear_due) patch.due = undefined;
         if (input.clear_pinned) patch.pinnedStart = undefined;
         const next = repo.updateTask(t.id, patch)!;
@@ -194,9 +198,10 @@ export function buildTools(svc: Services) {
         if (!t) return { text: `No open task matches "${str(input.query) ?? ""}".`, ok: false };
         if (t.recurrence) {
           const next = nextOccurrence(t.recurrence, now, tz());
-          const rolled = repo.updateTask(t.id, { due: next?.toISOString(), pinnedStart: undefined });
-          const doneCopy = repo.createTask({ ...t, id: undefined, status: "done", completedAt: now.toISOString(), recurrence: undefined, source: t.source });
-          svc.recordOutcome(doneCopy, now, num(input.actual_min));
+          const rolled = repo.updateTask(t.id, { due: next?.toISOString(), pinnedStart: undefined, plannedStart: undefined, plannedEnd: undefined });
+          repo.createTask({ ...t, id: undefined, status: "done", completedAt: now.toISOString(), recurrence: undefined, source: t.source });
+          // record against the original id so focus minutes logged on it are attributed
+          svc.recordOutcome({ ...t, status: "done", completedAt: now.toISOString() }, now, num(input.actual_min));
           return { text: `Done: ${t.title}. Next one ${next ? formatDate(next, tz()) : "scheduled"}.`, cards: rolled ? [{ type: "tasks", title: "Rolled forward", tasks: [rolled] }] : undefined, mutated: ["task"] };
         }
         const done = repo.updateTask(t.id, { status: "done" })!;
@@ -272,7 +277,8 @@ export function buildTools(svc: Services) {
           const dur = num(input.duration_min) ?? c?.durationMin ?? (/lunch|dinner|breakfast|coffee/i.test(title) ? 60 : 30);
           end = c?.end ?? new Date(start.getTime() + dur * 60000);
         }
-        const kind = (str(input.kind) as Event["kind"] | undefined) ?? (/focus|deep work|writing|block/i.test(title) ? "focus" : /lunch|dinner|gym|workout|dentist|doctor|family|kids|date/i.test(title) ? "personal" : "meeting");
+        const kindIn = str(input.kind);
+        const kind = (kindIn && ["meeting", "focus", "personal", "travel", "ritual"].includes(kindIn) ? (kindIn as Event["kind"]) : undefined) ?? (/focus|deep work|writing|block/i.test(title) ? "focus" : /lunch|dinner|gym|workout|dentist|doctor|family|kids|date/i.test(title) ? "personal" : "meeting");
         const e = repo.createEvent({ title, start: start.toISOString(), end: end.toISOString(), allDay: !!input.all_day, kind, location: str(input.location), notes: str(input.notes), peopleIds: linkPeople(arr(input.people), title), source: "agent" });
         return { text: `Scheduled: ${e.title} ${formatDate(start, tz())} ${formatTime(start, tz())}–${formatTime(end, tz())}${e.location ? ` at ${e.location}` : ""} [${e.id}]`, cards: [{ type: "events", title: "Scheduled", events: [e] }], mutated: ["event", "plan"] };
       },
@@ -350,7 +356,9 @@ export function buildTools(svc: Services) {
           const merged = repo.updateMemory(dup.id, { text: text.length > dup.text.length ? text : dup.text, confidence: Math.min(1, dup.confidence + 0.05), importance: Math.max(dup.importance, num(input.importance) ?? dup.importance) })!;
           return { text: `Already knew something close; reinforced it: "${merged.text}"`, cards: [{ type: "memories", title: "Reinforced", memories: [merged] }], mutated: ["memory"] };
         }
-        const m = repo.createMemory({ text, kind: (str(input.kind) as Memory["kind"]) ?? "fact", importance: num(input.importance) ?? 0.6, confidence: num(input.confidence) ?? (str(input.source) === "inferred" ? 0.7 : 0.9), source: (str(input.source) as Memory["source"]) ?? "stated", evidence: str(input.evidence), tags: arr(input.tags), pinned: !!input.pinned });
+        const kindIn = str(input.kind);
+        const clamp01 = (v: number | undefined, d: number) => (v === undefined ? d : Math.min(1, Math.max(0, v)));
+        const m = repo.createMemory({ text, kind: kindIn && ["fact", "preference", "goal", "relationship", "insight", "episode"].includes(kindIn) ? (kindIn as Memory["kind"]) : "fact", importance: clamp01(num(input.importance), 0.6), confidence: clamp01(num(input.confidence), str(input.source) === "inferred" ? 0.7 : 0.9), source: str(input.source) === "inferred" ? "inferred" : "stated", evidence: str(input.evidence), tags: arr(input.tags), pinned: !!input.pinned });
         return { text: `Remembered (${m.kind}): ${m.text}`, cards: [{ type: "memories", title: "Remembered", memories: [m] }], mutated: ["memory"] };
       },
     },
@@ -508,7 +516,8 @@ export function buildTools(svc: Services) {
         if (!title) return { text: "A goal needs a title.", ok: false };
         const existing = repo.findGoal(title);
         if (existing) return { text: `Already tracking “${existing.title}”.`, cards: [{ type: "goals", goals: [existing] }] };
-        const g = repo.createGoal({ title, why: str(input.why), horizon: (str(input.horizon) as Goal["horizon"]) ?? "month", targetDate: resolveWhen(input.target_date, now)?.toISOString(), pinned: !!input.pinned });
+        const hz = str(input.horizon);
+        const g = repo.createGoal({ title, why: str(input.why), horizon: hz && ["week", "month", "quarter", "year"].includes(hz) ? (hz as Goal["horizon"]) : "month", targetDate: resolveWhen(input.target_date, now)?.toISOString(), pinned: !!input.pinned });
         return { text: `Goal set: ${g.title} (${g.horizon}${g.targetDate ? `, by ${formatDate(new Date(g.targetDate), tz())}` : ""}).`, cards: [{ type: "goals", goals: [g] }], mutated: ["goal"] };
       },
     },
@@ -525,7 +534,7 @@ export function buildTools(svc: Services) {
         }
         const patch: Partial<Goal> = {};
         if (num(input.progress) !== undefined) patch.progress = Math.max(0, Math.min(1, num(input.progress)!));
-        if (str(input.status)) patch.status = str(input.status) as Goal["status"];
+        if (str(input.status) && ["active", "done", "paused"].includes(str(input.status)!)) patch.status = str(input.status) as Goal["status"];
         if (str(input.title)) patch.title = str(input.title);
         if (input.target_date !== undefined) patch.targetDate = resolveWhen(input.target_date, now)?.toISOString();
         const next = repo.updateGoal(g.id, patch)!;

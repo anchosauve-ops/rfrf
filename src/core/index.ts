@@ -1,6 +1,5 @@
 export * from "./types.js";
 export * from "./tz.js";
-export * from "./ids.js";
 export * from "./rrule.js";
 export * from "./chrono.js";
 export * from "./intent.js";
