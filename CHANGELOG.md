@@ -44,4 +44,4 @@ The end version of the first arc: a symbiotic personal intelligence that runs yo
 ### Product
 - React PWA with a validated light/dark design system, streaming command bar with cards and voice, nine views, onboarding, focus mode, export/import.
 - Hono + `node:sqlite` server, SSE agent stream and live channel, CORS restricted to local origins, binds to 127.0.0.1 by default.
-- Dockerfile, GitHub Actions CI, 113 tests.
+- Dockerfile, GitHub Actions CI, 152 tests.

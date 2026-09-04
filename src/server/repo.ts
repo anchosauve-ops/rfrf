@@ -174,7 +174,6 @@ export class Repo {
       location: s(r.location),
       notes: s(r.notes),
       peopleIds: pj<string[]>(r.people_ids, []),
-      recurrence: pj<Event["recurrence"]>(r.recurrence, undefined),
       source: r.source as Event["source"],
       createdAt: String(r.created_at),
       updatedAt: String(r.updated_at),
@@ -201,14 +200,13 @@ export class Repo {
       location: input.location,
       notes: input.notes,
       peopleIds: input.peopleIds ?? [],
-      recurrence: input.recurrence,
       source: input.source ?? "user",
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
     this.db
-      .prepare(`INSERT INTO events(id,title,start,"end",all_day,kind,location,notes,people_ids,recurrence,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(e.id, e.title, e.start, e.end, e.allDay ? 1 : 0, e.kind, e.location ?? null, e.notes ?? null, JSON.stringify(e.peopleIds), j(e.recurrence), e.source, e.createdAt, e.updatedAt);
+      .prepare(`INSERT INTO events(id,title,start,"end",all_day,kind,location,notes,people_ids,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(e.id, e.title, e.start, e.end, e.allDay ? 1 : 0, e.kind, e.location ?? null, e.notes ?? null, JSON.stringify(e.peopleIds), e.source, e.createdAt, e.updatedAt);
     return e;
   }
   updateEvent(id: string, patch: Partial<Event>): Event | undefined {
@@ -216,8 +214,8 @@ export class Repo {
     if (!cur) return undefined;
     const next: Event = { ...cur, ...patch, id, updatedAt: nowIso() };
     this.db
-      .prepare(`UPDATE events SET title=?,start=?,"end"=?,all_day=?,kind=?,location=?,notes=?,people_ids=?,recurrence=?,updated_at=? WHERE id=?`)
-      .run(next.title, next.start, next.end, next.allDay ? 1 : 0, next.kind, next.location ?? null, next.notes ?? null, JSON.stringify(next.peopleIds), j(next.recurrence), next.updatedAt, id);
+      .prepare(`UPDATE events SET title=?,start=?,"end"=?,all_day=?,kind=?,location=?,notes=?,people_ids=?,updated_at=? WHERE id=?`)
+      .run(next.title, next.start, next.end, next.allDay ? 1 : 0, next.kind, next.location ?? null, next.notes ?? null, JSON.stringify(next.peopleIds), next.updatedAt, id);
     return next;
   }
   deleteEvent(id: string): boolean {
@@ -443,7 +441,7 @@ export class Repo {
     const turn: Turn = { ...t, id: t.id ?? uid("trn"), createdAt: nowIso() };
     this.db
       .prepare(`INSERT INTO turns(id,conversation_id,role,text,cards,tool_calls,created_at) VALUES(?,?,?,?,?,?,?)`)
-      .run(turn.id, turn.conversationId, turn.role, turn.text, j(turn.cards), j(turn.toolCalls), turn.createdAt);
+      .run(turn.id, turn.conversationId, turn.role, turn.text, j(turn.cards), null, turn.createdAt);
     return turn;
   }
   listTurns(conversationId: string, limit = 40): Turn[] {
@@ -456,7 +454,6 @@ export class Repo {
       role: r.role as Turn["role"],
       text: String(r.text),
       cards: pj<Turn["cards"]>(r.cards, undefined),
-      toolCalls: pj<Turn["toolCalls"]>(r.tool_calls, undefined),
       createdAt: String(r.created_at),
     }));
   }

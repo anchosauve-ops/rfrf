@@ -31,7 +31,6 @@ export type Intent =
       end: string;
       people: string[];
       location?: string;
-      recurrence?: RRule;
     }
   | { type: "complete_task"; query: string }
   | { type: "drop_task"; query: string }
@@ -350,7 +349,7 @@ export function parseIntent(raw: string, ctx: IntentContext): ParsedIntent {
         const end = c.end ?? new Date(start.getTime() + (c.durationMin ?? (/(lunch|dinner)/i.test(text) ? 60 : 30)) * 60000);
         trace.push("create_event");
         return {
-          intent: { type: "create_event", title: capitalize(title), start: start.toISOString(), end: end.toISOString(), people, location: loc.location, recurrence: c.recurrence },
+          intent: { type: "create_event", title: capitalize(title), start: start.toISOString(), end: end.toISOString(), people, location: loc.location },
           confidence: 0.85,
           trace,
         };
@@ -386,7 +385,7 @@ export function parseIntent(raw: string, ctx: IntentContext): ParsedIntent {
       const start = c.start!;
       const end = c.end ?? new Date(start.getTime() + (c.durationMin ?? 30) * 60000);
       return {
-        intent: { type: "create_event", title: capitalize(body || "Event"), start: start.toISOString(), end: end.toISOString(), people, recurrence: c.recurrence },
+        intent: { type: "create_event", title: capitalize(body || "Event"), start: start.toISOString(), end: end.toISOString(), people },
         confidence: 0.7,
         trace: [...trace, "create_event:heuristic"],
       };

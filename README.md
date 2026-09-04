@@ -77,6 +77,10 @@ Payroll weeks run Sunday to Saturday to match Timeproof. Rates are per person wi
 |---|---|---|
 | ![Day](docs/screenshots/day.png) | ![Memory](docs/screenshots/memory.png) | ![Agent](docs/screenshots/agent.png) |
 
+| Dark | Mirror, dark | Mobile |
+|---|---|---|
+| ![Dark](docs/screenshots/now-dark.png) | ![Mirror dark](docs/screenshots/mirror-dark.png) | ![Mobile](docs/screenshots/mobile.png) |
+
 ## Two brains
 
 Kairos has one set of capabilities and two brains that drive them.
@@ -117,7 +121,6 @@ Environment (all optional, see `.env.example`):
 | Variable | Default | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | unset | Turns on the Claude brain |
-| `KAIROS_MODEL` | `claude-opus-5` | Model id (also settable in the UI) |
 | `KAIROS_DB` | `./data/kairos.db` | Where your life lives |
 | `PORT` | `8787` | Server port |
 | `HOST` | `127.0.0.1` | Bind address (`0.0.0.0` in containers) |

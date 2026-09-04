@@ -310,7 +310,7 @@ export function createApp(opts: AppOptions = {}) {
     }
     if (!person) return c.json({ error: "say who these hours belong to (person or personId)" }, 400);
     const t = now();
-    const result = body.days.length ? svc.importWorklog(person, body.days, body.source, t) : svc.importWorklogText(person, body.text!, body.source === "import" ? "paste" : body.source, t);
+    const result = body.days.length ? svc.importWorklog(person, body.days, body.source) : svc.importWorklogText(person, body.text!, body.source === "import" ? "paste" : body.source, t);
     notify("worklog");
     return c.json({ ok: true, person: { id: person.id, name: person.name, hourlyRate: person.hourlyRate ?? null }, ...result, payroll: person.hourlyRate ? svc.payroll(person, "this month", t) : null });
   });

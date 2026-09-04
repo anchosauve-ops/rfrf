@@ -49,14 +49,8 @@ export class Agent {
     const key = this.apiKey();
     svc.repo.addTurn({ conversationId, role: "user", text: message });
 
-    let finalText = "";
-    let finalCards: AgentEvent[] = [];
     const record = (ev: AgentEvent) => {
-      if (ev.type === "done") {
-        finalText = ev.text;
-        finalCards = [];
-        svc.repo.addTurn({ conversationId, role: "assistant", text: ev.text, cards: ev.cards });
-      }
+      if (ev.type === "done") svc.repo.addTurn({ conversationId, role: "assistant", text: ev.text, cards: ev.cards });
     };
 
     if (key) {
@@ -82,7 +76,5 @@ export class Agent {
       record(ev);
       yield ev;
     }
-    void finalText;
-    void finalCards;
   }
 }

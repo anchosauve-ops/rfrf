@@ -113,7 +113,7 @@ export class Services {
   }
 
   /** Import day totals for a person. Returns what changed, so the reply can be honest about it. */
-  importWorklog(person: Person, days: { date: string; minutes: number }[], source: "timeproof" | "paste" | "manual" | "import", now = new Date()): { added: number; updated: number; unchanged: number; days: number; minutes: number } {
+  importWorklog(person: Person, days: { date: string; minutes: number }[], source: "timeproof" | "paste" | "manual" | "import"): { added: number; updated: number; unchanged: number; days: number; minutes: number } {
     let added = 0, updated = 0, unchanged = 0;
     const before = new Set(this.repo.listWorklogs(person.id).map((l) => l.date));
     for (const d of days) {
@@ -122,13 +122,12 @@ export class Services {
       else if (before.has(d.date)) updated++;
       else added++;
     }
-    void now;
     return { added, updated, unchanged, days: days.length, minutes: days.reduce((n, d) => n + d.minutes, 0) };
   }
 
   importWorklogText(person: Person, text: string, source: "timeproof" | "paste" | "manual" | "import", now = new Date()) {
     const parsed = parseWorklogText(text, { now, tz: this.prefs().timezone });
-    const result = this.importWorklog(person, parsed.days, source, now);
+    const result = this.importWorklog(person, parsed.days, source);
     return { ...result, parsedDays: parsed.days, dropped: parsed.dropped };
   }
 
@@ -337,11 +336,6 @@ export class Services {
     if (profile) lines.push("What I know about them:\n" + profile);
     return lines.join("\n");
   }
-}
-
-// ============ Symbiosis ============
-export interface SymbiosisServices {
-  calibration(now?: Date): Calibration;
 }
 
 function fmtMin(m: number): string {

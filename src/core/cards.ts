@@ -47,7 +47,3 @@ export function cardToText(card: Card): string {
     }
   }
 }
-
-export function isCard(x: unknown): x is Card {
-  return !!x && typeof x === "object" && typeof (x as { type?: unknown }).type === "string";
-}

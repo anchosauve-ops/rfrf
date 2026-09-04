@@ -27,7 +27,7 @@ export function writeBackup(repo: Repo, opts: BackupOptions, now = new Date()): 
   return path;
 }
 
-export function prune(dir: string, keep: number): void {
+function prune(dir: string, keep: number): void {
   if (!existsSync(dir)) return;
   const files = readdirSync(dir)
     .filter((f) => f.startsWith("kairos-") && f.endsWith(".json"))

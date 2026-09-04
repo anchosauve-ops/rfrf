@@ -51,7 +51,7 @@ const ENERGY_NEIGHBORS: Record<Energy, Energy[]> = {
   social: ["admin", "light"],
 };
 
-export function energyAt(prefs: Preferences, minute: number): Energy | undefined {
+function energyAt(prefs: Preferences, minute: number): Energy | undefined {
   return prefs.energyCurve.find((s) => minute >= s.fromMin && minute < s.toMin)?.best;
 }
 

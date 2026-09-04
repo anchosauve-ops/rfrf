@@ -7,7 +7,7 @@
  * that ride along in the copied text are recognized arithmetically and dropped.
  */
 import type { Payroll, WorkLog } from "./types.js";
-import { toZoned, fromZoned, dayKey } from "./tz.js";
+import { toZoned, dayKey } from "./tz.js";
 
 export interface DayHours {
   date: string; // YYYY-MM-DD
@@ -46,7 +46,7 @@ function daysIn(y: number, m: number): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 /** 0 = Sunday, computed from the civil date (zone-free). */
-export function weekdayOf(date: string): number {
+function weekdayOf(date: string): number {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
 }
@@ -218,10 +218,4 @@ export function formatMoney(amount: number, currency = "USD"): string {
   } catch {
     return `${currency} ${amount.toFixed(2)}`;
   }
-}
-
-/** Convert a Timeproof-style civil date in the viewer's zone to an instant (noon) for display helpers. */
-export function dateToInstant(date: string, tz: string): Date {
-  const [y, m, d] = date.split("-").map(Number);
-  return fromZoned({ year: y!, month: m!, day: d!, hour: 12 }, tz);
 }

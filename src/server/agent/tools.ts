@@ -522,7 +522,7 @@ export function buildTools(svc: Services) {
         const minutes = parseHM(str(input.hours) ?? "");
         if (!when || minutes === undefined) return { text: "I need a date and hours like 07:04.", ok: false };
         const date = dayKey(when, tz());
-        const r = svc.importWorklog(p, [{ date, minutes }], "manual", now);
+        const r = svc.importWorklog(p, [{ date, minutes }], "manual");
         const pay = svc.payroll(p, "this week", now);
         return { text: `Logged ${fmtHM(minutes)} for ${p.name} on ${date}${r.updated ? " (replaced the earlier entry)" : ""}. This week: ${fmtHM(pay.totalMinutes)}${p.hourlyRate ? ` = ${formatMoney(pay.amount, pay.currency)}` : ""}.`, cards: p.hourlyRate ? [{ type: "payroll", payroll: pay }] : [], mutated: ["worklog"] };
       },
@@ -682,7 +682,7 @@ export function buildTools(svc: Services) {
 
 import { describeCalibration as describeCalibrationLines } from "../../core/index.js";
 
-export function guessEnergy(title: string): Energy {
+function guessEnergy(title: string): Energy {
   if (/\b(write|writing|draft|design|code|coding|research|think|study|outline|essay|deck|proposal|strategy|architecture|analy[sz]e|deep)\b/i.test(title)) return "deep";
   if (/\b(call|text|message|email .* to|meet|coffee|lunch|dinner|chat|catch up|reach out|talk|ping|thank|reply to|follow up with)\b/i.test(title)) return "social";
   if (/\b(pay|invoice|renew|book|order|submit|file|form|tax|expense|schedule|register|cancel|return|print|sign|passport|insurance|bank|groceries|laundry|clean|errand|inbox|admin)\b/i.test(title)) return "admin";

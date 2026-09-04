@@ -50,7 +50,7 @@ interface DayCap {
   meetingsMin: number;
 }
 
-export function dayCapacities(input: SimInput, horizonDays: number): DayCap[] {
+function dayCapacities(input: SimInput, horizonDays: number): DayCap[] {
   const { now, tz, prefs } = input;
   const out: DayCap[] = [];
   const day0 = startOfDay(now, tz);

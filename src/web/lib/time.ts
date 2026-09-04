@@ -24,10 +24,8 @@ export function relDay(iso: string, now: Date, tz?: string): string {
 export function dueLabel(iso: string, now: Date, tz?: string): { text: string; overdue: boolean } {
   const d = new Date(iso);
   const overdue = d < now;
-  const hasTime = !/T00:00|T09:00/.test(new Date(iso).toISOString()) || true;
-  const day = relDay(iso, now, tz);
-  const timePart = hasTime ? ` ${fmtTime(d, tz)}` : "";
-  return { text: overdue ? `was due ${day}${timePart}` : `due ${day}${timePart}`, overdue };
+  const when = `${relDay(iso, now, tz)} ${fmtTime(d, tz)}`;
+  return { text: overdue ? `was due ${when}` : `due ${when}`, overdue };
 }
 export function minutes(n: number): string {
   if (n < 60) return `${n}m`;
