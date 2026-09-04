@@ -1,3 +1,4 @@
+import { uid } from "./ids.js";
 /**
  * Repository — the only module that speaks SQL. Everything above it works
  * with plain domain objects from src/core.
@@ -5,7 +6,6 @@
 import type { DB } from "./db.js";
 import {
   DEFAULT_PREFERENCES,
-  uid,
   type Event,
   type Goal,
   type LedgerEntry,

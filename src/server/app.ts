@@ -10,7 +10,7 @@ import { Services } from "./services.js";
 import { Agent } from "./agent/index.js";
 import { Scheduler } from "./scheduler.js";
 import { Bus } from "./bus.js";
-import { dayKey, parseChrono, describeCalibration, type Preferences } from "../core/index.js";
+import { dayKey, parseChrono, describeCalibration, setTime, addDays, startOfDay, type Preferences } from "../core/index.js";
 import { ValidationError, taskPatch, eventPatch, memoryPatch, personPatch, goalPatch, ritualPatch, watcherPatch, prefsPatch } from "./validate.js";
 import { secretKey, seal, open as unseal } from "./secrets.js";
 import { writeBackup, backupDir, lastBackupAt } from "./backup.js";
@@ -45,6 +45,11 @@ export function createApp(opts: AppOptions = {}) {
     const plain = unseal(raw, key);
     if (plain && raw === plain) repo.setMeta("anthropic_api_key", seal(plain, key)); // upgrade legacy plaintext
     return plain || undefined;
+  };
+  /** A stored key exists but can't be decrypted (secret rotated or lost). */
+  const apiKeyUnreadable = () => {
+    const raw = repo.getMeta("anthropic_api_key");
+    return !!raw && raw.startsWith("enc:v1:") && !unseal(raw, key);
   };
   const agent = new Agent({ svc, now: opts.now, apiKey: opts.apiKey ?? (() => process.env.ANTHROPIC_API_KEY || storedApiKey()) });
   const scheduler = new Scheduler(svc, bus, opts.now ?? (() => new Date()));
@@ -130,7 +135,14 @@ export function createApp(opts: AppOptions = {}) {
   });
 
   // ---------- prefs ----------
-  app.get("/api/prefs", (c) => c.json({ ...repo.getPrefs(), hasApiKey: !!agent.apiKey(), apiKeySource: process.env.ANTHROPIC_API_KEY ? "env" : repo.getMeta("anthropic_api_key") ? "settings" : null }));
+  app.get("/api/prefs", (c) =>
+    c.json({
+      ...repo.getPrefs(),
+      hasApiKey: !!agent.apiKey(),
+      apiKeySource: process.env.ANTHROPIC_API_KEY ? "env" : agent.apiKey() ? "settings" : null,
+      apiKeyError: apiKeyUnreadable() ? "The saved API key can't be decrypted (the local secret changed). Re-enter it." : null,
+    }),
+  );
   app.put("/api/prefs", async (c) => {
     const body = prefsPatch(await json<Record<string, unknown>>(c));
     const { apiKey, ...patch } = body;
@@ -444,7 +456,7 @@ export function createApp(opts: AppOptions = {}) {
   app.post("/api/import", async (c) => {
     const data = await json<Record<string, unknown>>(c);
     if (data.version !== undefined && data.version !== 1) return c.json({ error: `unsupported export version ${String(data.version)}` }, 400);
-    const r = repo.importAll(data);
+    const r = repo.importAll(sanitizeImport(data));
     notify("task"); notify("event"); notify("memory"); notify("person");
     return c.json(r);
   });
@@ -476,21 +488,46 @@ export function createApp(opts: AppOptions = {}) {
   return { app, repo, svc, agent, scheduler, bus, db, backup, close };
 }
 
+/** Run every imported record through the same sanitizers as the API. Records that fail are dropped, not fatal. */
+export function sanitizeImport(data: Record<string, unknown>): Record<string, unknown> {
+  const clean = <T>(items: unknown, fn: (raw: Record<string, unknown>) => Partial<T>, required: (keyof T)[]): (Partial<T> & { id?: string })[] => {
+    if (!Array.isArray(items)) return [];
+    const out: (Partial<T> & { id?: string })[] = [];
+    for (const it of items) {
+      if (!it || typeof it !== "object") continue;
+      try {
+        const raw = it as Record<string, unknown>;
+        const p = fn(raw) as Partial<T> & { id?: string };
+        if (typeof raw.id === "string" && /^[a-z]{3}_[a-z0-9]+$/.test(raw.id)) p.id = raw.id;
+        if (required.every((k) => p[k] !== undefined)) out.push(p);
+      } catch { /* drop the record */ }
+    }
+    return out;
+  };
+  const tasks = clean<import("../core/index.js").Task>(data.tasks, (r) => ({ ...taskPatch(r), createdAt: typeof r.createdAt === "string" ? r.createdAt : undefined, completedAt: typeof r.completedAt === "string" ? r.completedAt : undefined }), ["title"]);
+  for (const t of tasks) for (const k of Object.keys(t)) if (k.startsWith("__clear_")) delete (t as Record<string, unknown>)[k];
+  return {
+    ...data,
+    prefs: data.prefs && typeof data.prefs === "object" ? (() => { try { const { apiKey: _k, ...p } = prefsPatch(data.prefs as Record<string, unknown>); return p; } catch { return undefined; } })() : undefined,
+    tasks,
+    events: clean<import("../core/index.js").Event>(data.events, eventPatch, ["title", "start", "end"]),
+    memories: clean<import("../core/index.js").Memory>(data.memories, memoryPatch, ["text"]),
+    people: clean<import("../core/index.js").Person>(data.people, personPatch, ["name"]),
+    goals: clean<import("../core/index.js").Goal>(data.goals, goalPatch, ["title"]),
+    rituals: clean<import("../core/index.js").Ritual>(data.rituals, (r) => { const p = ritualPatch(r); return { ...p, kind: typeof r.kind === "string" ? (r.kind as import("../core/index.js").Ritual["kind"]) : undefined, rule: p.rule && p.rule.freq ? (p.rule as import("../core/index.js").RRule) : undefined }; }, ["name", "kind", "rule"]),
+    watchers: clean<import("../core/index.js").Watcher>(data.watchers, (r) => ({ ...watcherPatch(r), kind: typeof r.kind === "string" ? (r.kind as import("../core/index.js").Watcher["kind"]) : undefined }), ["name", "kind"]),
+    outcomes: Array.isArray(data.outcomes) ? data.outcomes.filter((o) => o && typeof o === "object" && typeof (o as { taskId?: unknown }).taskId === "string" && ["deep", "light", "admin", "social"].includes(String((o as { energy?: unknown }).energy)) && typeof (o as { completedAt?: unknown }).completedAt === "string") : [],
+  };
+}
+
 /** A believable first day, so the product is legible in 10 seconds. */
 export function seedDemo(repo: Repo, now: Date): void {
   type Task = import("../core/index.js").Task;
   const prefs = repo.getPrefs();
   if (!prefs.name) repo.setPrefs({ name: "Will" });
-  const d = (h: number, m = 0, dayOffset = 0) => {
-    const t = new Date(now);
-    t.setUTCDate(t.getUTCDate() + dayOffset);
-    t.setUTCHours(h, m, 0, 0);
-    return t.toISOString();
-  };
   const tz = repo.getPrefs().timezone;
-  const localHour = Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).format(now));
-  const offset = now.getUTCHours() - localHour; // approx UTC offset in hours
-  const L = (h: number, m = 0, dayOffset = 0) => d((h + offset + 24) % 24, m, dayOffset + (h + offset >= 24 ? 1 : 0));
+  /** local wall-clock time on today+dayOffset in the person's zone */
+  const L = (h: number, m = 0, dayOffset = 0) => setTime(addDays(startOfDay(now, tz), dayOffset, tz), h, m, tz).toISOString();
 
   const priya = repo.findPerson("Priya") ?? repo.createPerson({ name: "Priya", relation: "colleague", cadenceDays: 14, notes: "Design lead. Loves systems thinking.", lastContactAt: new Date(now.getTime() - 20 * 86400_000).toISOString() });
   const sam = repo.findPerson("Sam") ?? repo.createPerson({ name: "Sam", relation: "mentor", cadenceDays: 30, lastContactAt: new Date(now.getTime() - 45 * 86400_000).toISOString() });
@@ -532,8 +569,7 @@ export function seedDemo(repo: Repo, now: Date): void {
       ["Team lunch", "social", 60, 60, 12, -25], ["Call the accountant", "social", 20, 25, 13, -26], ["Read competitor teardown", "light", 40, 35, 14, -27], ["Triage bug list", "light", 30, 30, 15, -28],
     ];
     for (const [title, energy, est, actual, hour, dayOff] of hist) {
-      const completedAt = new Date(now.getTime() + dayOff * 86400_000);
-      completedAt.setUTCHours((hour + offset + 24) % 24, 0, 0, 0);
+      const completedAt = new Date(L(hour, 0, dayOff));
       const t = repo.createTask({ title, energy, estimateMin: est, priority: 3, status: "done", completedAt: completedAt.toISOString(), createdAt: new Date(completedAt.getTime() - 3 * 86400_000).toISOString(), source: "import", due: dayOff % 3 === 0 ? new Date(completedAt.getTime() - 86400_000).toISOString() : undefined });
       repo.addOutcome({ taskId: t.id, title, energy, tags: [], estimateMin: est, actualMin: actual, completedAt: completedAt.toISOString(), hour, weekday: new Date(completedAt).getUTCDay(), slipped: dayOff % 3 === 0, onPlan: dayOff % 4 !== 0 });
     }

@@ -4,7 +4,7 @@
  */
 import type { Services } from "./services.js";
 import type { Bus } from "./bus.js";
-import { nextOccurrence, dayKey, type Nudge, type Ritual, type Watcher } from "../core/index.js";
+import { nextOccurrence, dayKey, toZoned, type Nudge, type Ritual, type Watcher } from "../core/index.js";
 
 export class Scheduler {
   private timer?: NodeJS.Timeout;
@@ -168,8 +168,9 @@ export class Scheduler {
       }
       case "unplanned_day": {
         const prefs = this.svc.prefs();
-        const minute = Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).format(now)) * 60;
-        const weekday = new Date(new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(now)).getDay();
+        const z = toZoned(now, tz);
+        const minute = z.hour * 60 + z.minute;
+        const weekday = z.weekday;
         if (!prefs.workDays.includes(weekday) || minute < prefs.workdayStartMin || minute > prefs.workdayStartMin + 90) return undefined;
         if (repo.getPlan(dayKey(now, tz))) return undefined;
         if (!repo.listTasks({ status: "open" }).length) return undefined;

@@ -307,7 +307,7 @@ export function parseIntent(raw: string, ctx: IntentContext): ParsedIntent {
     if (d) return { intent: { type: "drop_task", query: q(d[1] ?? "") }, confidence: 0.8, trace: ["drop_task"] };
     const r = /^(?:move|push|reschedule|snooze|defer|postpone|bump|shift)\s+(?:the\s+|my\s+)?(?:task\s+)?(.+?)\s+(?:to|until|till|for)\s+(.+)$/i.exec(lower);
     if (r) {
-      const c = parseChrono(r[2]!, { now: ctx.now, tz: ctx.tz, workdayEndMin: ctx.workdayEndMin } as never);
+      const c = parseChrono(r[2]!, { now: ctx.now, tz: ctx.tz, endOfDayMin: ctx.workdayEndMin });
       if (c.start) return { intent: { type: "reschedule_task", query: q(r[1] ?? ""), when: c.start.toISOString(), allDay: c.allDay }, confidence: 0.85, trace: ["reschedule_task"] };
     }
   }

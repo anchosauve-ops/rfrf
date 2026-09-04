@@ -21,7 +21,7 @@ export class Agent {
   }
 
   apiKey(): string | undefined {
-    return this.deps.apiKey?.() ?? process.env.ANTHROPIC_API_KEY ?? this.deps.svc.repo.getMeta("anthropic_api_key") ?? undefined;
+    return this.deps.apiKey?.() ?? process.env.ANTHROPIC_API_KEY ?? undefined;
   }
 
   mode(): AgentMode {

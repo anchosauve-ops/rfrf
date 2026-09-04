@@ -136,7 +136,7 @@ Keyboard: `⌘K` or `/` focuses the command bar, `1–7` switch views, `Esc` col
 ```bash
 pnpm dev        # both servers with hot reload
 pnpm lint       # eslint (typescript-eslint + react-hooks)
-pnpm test       # 123 tests: parser, planner, memory, learning, futures, council, goals, server, scheduler, hardening, migrations
+pnpm test       # 140 tests: parser, planner, memory, learning, futures, council, goals, server, scheduler, hardening, migrations, regressions, mocked Claude brain
 pnpm e2e        # browser smoke test against the production build (Chromium)
 pnpm typecheck  # web + server
 pnpm build      # web bundle + server transpile

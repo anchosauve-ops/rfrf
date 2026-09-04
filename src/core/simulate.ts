@@ -89,6 +89,8 @@ interface SimTask {
   priority: number;
   goalId?: string;
   pinnedDay?: string;
+  /** not available before this instant (snoozed) */
+  notBefore?: number;
 }
 
 function simulateOnce(tasks: SimTask[], caps: DayCap[], r: () => number, opts: { sigma: number; interruption: number }): Map<string, number> {
@@ -103,6 +105,7 @@ function simulateOnce(tasks: SimTask[], caps: DayCap[], r: () => number, opts: {
     for (const t of order) {
       if (done.has(t.id) || free <= 0) continue;
       if (t.pinnedDay && t.pinnedDay !== cap.key) continue;
+      if (t.notBefore !== undefined && cap.end.getTime() <= t.notBefore) continue;
       const need = remaining.get(t.id)!;
       const take = Math.min(need, free);
       free -= take;
@@ -133,9 +136,12 @@ export function simulateFutures(input: SimInput): RiskReport {
       priority: t.priority,
       goalId: t.goalId,
       pinnedDay: t.pinnedStart ? dayKey(new Date(t.pinnedStart), tz) : undefined,
+      notBefore: t.snoozedUntil ? new Date(t.snoozedUntil).getTime() : undefined,
     }))
     // someday tasks with no date don't compete for capacity in the simulation
-    .filter((t) => !(t.priority === 4 && !t.due));
+    .filter((t) => !(t.priority === 4 && !t.due))
+    // tasks snoozed past the horizon are out of the picture entirely
+    .filter((t) => t.notBefore === undefined || t.notBefore < horizonEnd);
 
   const sigma = 0.35;
   const interruption = input.calibration && input.calibration.planAdherence.n >= 5 ? Math.min(0.4, 0.1 + (1 - input.calibration.planAdherence.rate) * 0.3) : 0.15;
@@ -186,7 +192,7 @@ export function simulateFutures(input: SimInput): RiskReport {
   const interventions: Intervention[] = [];
   const atRisk = risks.filter((r) => r.level !== "safe");
   if (atRisk.length) {
-    const candidates = simTasks.filter((t) => t.priority >= 3 && t.due === undefined || (t.due !== undefined && t.due > horizonEnd));
+    const candidates = simTasks.filter((t) => t.notBefore === undefined && ((t.priority >= 3 && t.due === undefined) || (t.due !== undefined && t.due > horizonEnd)));
     for (const c of candidates.slice(0, 12)) {
       const without = simTasks.filter((t) => t.id !== c.id);
       const r = run(without, seed + 1);

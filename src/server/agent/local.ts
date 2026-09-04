@@ -1,3 +1,4 @@
+import { uid } from "../ids.js";
 /**
  * Local Mind — the brain that runs when there's no model.
  *
@@ -9,7 +10,6 @@
 import type { ToolRegistry, ToolResult } from "./tools.js";
 import { parseIntent, extractCandidates, type AgentEvent, type Card, type Intent } from "../../core/index.js";
 import type { Services } from "../services.js";
-import { uid } from "../../core/index.js";
 
 const HELP = `Here's what I understand without a model:
 - "call mom tomorrow at 5", "submit report by friday eod", "every weekday 8am journal"

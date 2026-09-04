@@ -58,7 +58,9 @@ export class Services {
       goalIds: this.repo.listGoals().map((g) => g.id),
     });
     this.repo.savePlan(plan);
-    // reflect soft placements on tasks so lists can show "planned 10:30"
+    // reflect soft placements on tasks so lists can show "planned 10:30" — only for today's plan,
+    // so planning a future day never clobbers where things sit today
+    if (plan.date !== dayKey(now, tz)) return plan;
     const placed = new Map<string, { start: string; end: string }>();
     for (const b of plan.blocks) if (b.kind === "task" && b.taskId && !placed.has(b.taskId)) placed.set(b.taskId, { start: b.start, end: b.end });
     for (const t of this.repo.listTasks({ status: "open" })) {
@@ -206,7 +208,8 @@ export class Services {
     const tz = this.prefs().timezone;
     if (kind === "defer") {
       const nextMonday = (() => { const z = toZoned(now, tz); const delta = ((8 - z.weekday) % 7) || 7; return addDays(startOfDay(now, tz), delta, tz); })();
-      const before = { due: t.due, pinnedStart: t.pinnedStart, snoozedUntil: t.snoozedUntil };
+      // null (not undefined) survives JSON so undo can clear fields it needs to clear
+      const before = { due: t.due ?? null, pinnedStart: t.pinnedStart ?? null, snoozedUntil: t.snoozedUntil ?? null };
       this.repo.updateTask(t.id, { snoozedUntil: nextMonday.toISOString(), pinnedStart: undefined, due: t.due && new Date(t.due) < nextMonday ? nextMonday.toISOString() : t.due });
       return this.repo.addLedger({ action: "defer_task", summary: `Pushed “${t.title}” to next week.`, reason, undo: [{ entity: "task", id: t.id, patch: before }], origin });
     }
@@ -220,9 +223,11 @@ export class Services {
     const entry = entryId ? this.repo.getLedger(entryId) : this.repo.listLedger(50).find((e) => !e.undoneAt);
     if (!entry || entry.undoneAt) return undefined;
     for (const u of entry.undo) {
-      if (u.entity === "task" && u.id) this.repo.updateTask(u.id, u.patch as never);
-      else if (u.entity === "event" && u.id) this.repo.updateEvent(u.id, u.patch as never);
-      else if (u.entity === "prefs") this.repo.setPrefs(u.patch as never);
+      // JSON null means "clear this field"
+      const patch = Object.fromEntries(Object.entries(u.patch).map(([k, v]) => [k, v === null ? undefined : v]));
+      if (u.entity === "task" && u.id) this.repo.updateTask(u.id, patch as never);
+      else if (u.entity === "event" && u.id) this.repo.updateEvent(u.id, patch as never);
+      else if (u.entity === "prefs") this.repo.setPrefs(patch as never);
     }
     this.repo.markUndone(entry.id);
     this.calCache = undefined;

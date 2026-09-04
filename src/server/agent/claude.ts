@@ -1,3 +1,4 @@
+import { uid } from "../ids.js";
 /**
  * Claude brain — a streaming tool-use loop over the shared tool registry.
  */
@@ -5,7 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { ToolRegistry } from "./tools.js";
 import type { Services } from "../services.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
-import { cardToText, uid, type AgentEvent, type Card, type Turn } from "../../core/index.js";
+import { cardToText, type AgentEvent, type Card, type Turn } from "../../core/index.js";
 
 export interface ClaudeOptions {
   client: Anthropic;
