@@ -18,6 +18,11 @@ The end version of the first arc: a symbiotic personal intelligence that runs yo
 - Goals with alignment and pace; nightly reflection that writes learned insights into memory.
 - Mirror: the learned model in plain words, with the dials that decide what Kairos may do with it.
 
+### Team and payroll
+- People can carry an hourly rate, currency and expected weekly hours.
+- Work logs per person per day; Sunday–Saturday payroll with cents; payroll cards; a Team line in the brief and retro; a light-week watcher.
+- OnlineJobs.ph Timeproof connection: bookmarklet (token-gated import endpoint, the one route a foreign origin may call), paste import that recognizes week and month totals in the copied calendar, and plain commands.
+
 ### Final review fixes
 - Guardian deferrals are now visible to the simulator (snoozed tasks don't compete or get re-suggested), and their undo payloads survive JSON so Undo actually clears the snooze.
 - Planning a future day no longer overwrites today's placements.

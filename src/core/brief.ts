@@ -3,7 +3,8 @@
  * review and weekly retro deterministically from data; a model can add a
  * narrative on top but the structure never depends on one.
  */
-import type { Brief, BriefSection, Event, Memory, Person, Plan, Preferences, Task } from "./types.js";
+import type { Brief, BriefSection, Event, Memory, Person, Plan, Preferences, Task, WorkLog } from "./types.js";
+import { computePayroll, fmtHM, formatMoney, weekStart, addDaysKey } from "./worklog.js";
 import { dayKey, formatTime, minutesBetween, sameDay, toZoned } from "./tz.js";
 import { recencyFactor } from "./memory.js";
 
@@ -17,6 +18,23 @@ export interface BriefInput {
   people: Person[];
   memories: Memory[];
   plan?: Plan;
+  /** work logs for people with a rate, so the brief can report team hours */
+  worklogs?: WorkLog[];
+}
+
+/** One line per paid worker: hours and cost this week, flagged when light. */
+export function teamSection(people: Person[], worklogs: WorkLog[], now: Date, tz: string): BriefSection | undefined {
+  const paid = people.filter((p) => p.hourlyRate);
+  if (!paid.length) return undefined;
+  const today = dayKey(now, tz);
+  const from = weekStart(today);
+  const to = addDaysKey(from, 6);
+  const lines = paid.map((p) => {
+    const pr = computePayroll({ personId: p.id, name: p.name, logs: worklogs.filter((l) => l.personId === p.id), rate: p.hourlyRate!, currency: p.currency, from, to, now });
+    const light = p.expectedWeeklyHours && toZoned(now, tz).weekday >= 4 && pr.totalMinutes < p.expectedWeeklyHours * 60 * 0.6;
+    return `${p.name}: ${fmtHM(pr.totalMinutes)} this week · ${formatMoney(pr.amount, pr.currency)}${light ? ` · light (expects ${p.expectedWeeklyHours}h)` : ""}`;
+  });
+  return { id: "team", title: "Team", lines };
 }
 
 function greetingFor(now: Date, tz: string, name: string): string {
@@ -101,6 +119,8 @@ export function composeBrief(input: BriefInput): Brief {
         ],
         cards: [{ type: "plan", plan: input.plan }],
       });
+    const team = teamSection(input.people, input.worklogs ?? [], now, tz);
+    if (team) sections.push(team);
     if (goals[0]) sections.push({ id: "north", title: "North star", lines: [goals[0].text] });
 
     return { date: today, kind, greeting, headline, sections, generatedAt: now.toISOString() };
@@ -149,6 +169,8 @@ export function composeBrief(input: BriefInput): Brief {
   if (overdue.length) sections.push({ id: "debt", title: "Debt", lines: overdue.slice(0, 6).map((t) => t.title), cards: [{ type: "tasks", tasks: overdue.slice(0, 6) }] });
   if (goals.length) sections.push({ id: "goals", title: "Against your goals", lines: goals.slice(0, 3).map((g) => g.text) });
   if (stalePeople.length) sections.push({ id: "people", title: "People", lines: stalePeople.map(({ p }) => `Reach out to ${p.name}`) });
+  const team = teamSection(input.people, input.worklogs ?? [], now, tz);
+  if (team) sections.push({ ...team, title: "Team this week" });
   return { date: today, kind, greeting: greetingFor(now, tz, prefs.name), headline, sections, generatedAt: now.toISOString() };
 }
 

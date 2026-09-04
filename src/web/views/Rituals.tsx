@@ -10,6 +10,7 @@ const WATCH_HELP: Record<Watcher["kind"], (t: number) => string> = {
   deadline_approaching: (t) => `when an important task is due within ${t}h and unplanned`,
   unplanned_day: () => `when the workday starts with no plan`,
   deadline_risk: (t) => `when an important deadline has ≥ ${Math.round(t * 100)}% simulated risk (Guardian may defer low-priority work)`,
+  team_hours: (t) => `from Thursday, when a paid worker is below ${Math.round(t * 100)}% of their expected weekly hours`,
   empty_estimate: () => `when tasks lack estimates`,
 };
 

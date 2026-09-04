@@ -69,6 +69,17 @@ const MIGRATIONS: string[] = [
     origin TEXT NOT NULL, created_at TEXT NOT NULL, undone_at TEXT
   );
   `,
+  `
+  ALTER TABLE people ADD COLUMN hourly_rate REAL;
+  ALTER TABLE people ADD COLUMN currency TEXT;
+  ALTER TABLE people ADD COLUMN expected_weekly_hours REAL;
+  CREATE TABLE IF NOT EXISTS worklogs (
+    id TEXT PRIMARY KEY, person_id TEXT NOT NULL, date TEXT NOT NULL, minutes INTEGER NOT NULL,
+    source TEXT NOT NULL, note TEXT, imported_at TEXT NOT NULL,
+    UNIQUE(person_id, date)
+  );
+  CREATE INDEX IF NOT EXISTS idx_worklogs_person_date ON worklogs(person_id, date);
+  `,
 ];
 
 export function openDb(path: string): DB {

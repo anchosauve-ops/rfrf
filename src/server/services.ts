@@ -18,6 +18,14 @@ import {
   type CouncilVerdict,
   type LedgerEntry,
   type RiskReport,
+  type Payroll,
+  computePayroll,
+  payrollRange,
+  parseWorklogText,
+  fmtHM,
+  formatMoney,
+  weekStart,
+  addDaysKey,
   profileSummary,
   staleness,
   dayKey,
@@ -92,7 +100,55 @@ export class Services {
       people: this.repo.listPeople(),
       memories: this.repo.listMemories(),
       plan,
+      worklogs: this.repo.listWorklogs(),
     });
+  }
+
+  // ---------- team & payroll ----------
+  payroll(person: Person, period: string | undefined, now = new Date()): Payroll & { label: string } {
+    const tz = this.prefs().timezone;
+    const r = payrollRange(period, now, tz);
+    const pr = computePayroll({ personId: person.id, name: person.name, logs: this.repo.listWorklogs(person.id), rate: person.hourlyRate ?? 0, currency: person.currency, from: r.from, to: r.to, expectedWeeklyHours: person.expectedWeeklyHours, now });
+    return { ...pr, label: r.label };
+  }
+
+  /** Import day totals for a person. Returns what changed, so the reply can be honest about it. */
+  importWorklog(person: Person, days: { date: string; minutes: number }[], source: "timeproof" | "paste" | "manual" | "import", now = new Date()): { added: number; updated: number; unchanged: number; days: number; minutes: number } {
+    let added = 0, updated = 0, unchanged = 0;
+    const before = new Set(this.repo.listWorklogs(person.id).map((l) => l.date));
+    for (const d of days) {
+      const r = this.repo.upsertWorklog({ personId: person.id, date: d.date, minutes: d.minutes, source });
+      if (!r.changed) unchanged++;
+      else if (before.has(d.date)) updated++;
+      else added++;
+    }
+    void now;
+    return { added, updated, unchanged, days: days.length, minutes: days.reduce((n, d) => n + d.minutes, 0) };
+  }
+
+  importWorklogText(person: Person, text: string, source: "timeproof" | "paste" | "manual" | "import", now = new Date()) {
+    const parsed = parseWorklogText(text, { now, tz: this.prefs().timezone });
+    const result = this.importWorklog(person, parsed.days, source, now);
+    return { ...result, parsedDays: parsed.days, dropped: parsed.dropped };
+  }
+
+  /** One row per paid worker: this week, this month, all time. */
+  teamSummary(now = new Date()) {
+    const tz = this.prefs().timezone;
+    const today = dayKey(now, tz);
+    const ws = weekStart(today);
+    return this.repo
+      .listPeople()
+      .filter((p) => p.hourlyRate)
+      .map((p) => {
+        const logs = this.repo.listWorklogs(p.id);
+        const week = computePayroll({ personId: p.id, name: p.name, logs, rate: p.hourlyRate!, currency: p.currency, from: ws, to: addDaysKey(ws, 6), now });
+        const mr = payrollRange("this month", now, tz);
+        const month = computePayroll({ personId: p.id, name: p.name, logs, rate: p.hourlyRate!, currency: p.currency, from: mr.from, to: mr.to, now });
+        const all = computePayroll({ personId: p.id, name: p.name, logs, rate: p.hourlyRate!, currency: p.currency, from: "0000-01-01", to: "9999-12-31", now });
+        const last = logs.length ? logs[logs.length - 1]! : undefined;
+        return { person: p, week, month, all, lastLog: last?.date, lastImportAt: logs.reduce<string | undefined>((m, l) => (!m || l.importedAt > m ? l.importedAt : m), undefined), summary: `${p.name}: ${fmtHM(week.totalMinutes)} this week (${formatMoney(week.amount, week.currency)}), ${fmtHM(month.totalMinutes)} this month (${formatMoney(month.amount, month.currency)})` };
+      });
   }
 
   stalePeople(now = new Date(), minRatio = 1): { person: Person; overdueDays: number; ratio: number }[] {
@@ -272,6 +328,8 @@ export class Services {
     if (stale.length) lines.push("People drifting: " + stale.slice(0, 4).map((s) => `${s.person.name} (${Math.round(s.ratio * 100)}% of cadence)`).join("; "));
     const goals = this.repo.listGoals();
     if (goals.length) lines.push("Goals: " + goals.map((g) => `${g.title} [${g.id}] (${g.horizon}, ${Math.round(g.progress * 100)}%)`).join("; "));
+    const team = this.teamSummary(now);
+    if (team.length) lines.push("Team (paid workers): " + team.map((t) => `${t.summary} at ${formatMoney(t.person.hourlyRate!, t.person.currency ?? "USD")}/h [${t.person.id}]`).join("; "));
     const cal = this.calibration(now);
     const learned = describeCalibration(cal);
     if (learned.length) lines.push("Learned about them: " + learned.join(" "));

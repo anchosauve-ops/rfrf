@@ -11,6 +11,7 @@ Kairos is a local-first, symbiotic personal agent: it runs a person's day and le
 - Every write that comes over HTTP goes through `src/server/validate.ts`.
 - Autonomous actions go through `Services.intervene` so they land in the ledger with an undo payload. Guardian may defer; it may not scope work down or delete. Undo payloads use `null` (never `undefined`) for fields that must be cleared, because they round-trip through JSON.
 - Tool executors coerce model-supplied enums and ranges (`energyOf`, `priorityOf`, `estimateOf` in `tools.ts`); the API does not enforce tool schemas without `strict`.
+- Money: `computePayroll` rounds once, to cents, at the end. Weeks are Sunday–Saturday everywhere (Timeproof convention). Work logs upsert on (person, date, source).
 - Charts use the validated palette in `styles/app.css`. Status colors always ship with a text label.
 
 ## Commands

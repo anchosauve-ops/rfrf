@@ -19,6 +19,7 @@ import {
   type Task,
   type Turn,
   type Watcher,
+  type WorkLog,
 } from "../core/index.js";
 
 type Row = Record<string, unknown>;
@@ -305,6 +306,9 @@ export class Repo {
       lastContactAt: s(r.last_contact_at),
       cadenceDays: r.cadence_days === null ? undefined : Number(r.cadence_days),
       birthday: s(r.birthday),
+      hourlyRate: r.hourly_rate === null || r.hourly_rate === undefined ? undefined : Number(r.hourly_rate),
+      currency: s(r.currency),
+      expectedWeeklyHours: r.expected_weekly_hours === null || r.expected_weekly_hours === undefined ? undefined : Number(r.expected_weekly_hours),
       createdAt: String(r.created_at),
       updatedAt: String(r.updated_at),
     };
@@ -331,12 +335,15 @@ export class Repo {
       lastContactAt: input.lastContactAt,
       cadenceDays: input.cadenceDays,
       birthday: input.birthday,
+      hourlyRate: input.hourlyRate,
+      currency: input.currency,
+      expectedWeeklyHours: input.expectedWeeklyHours,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
     this.db
-      .prepare(`INSERT INTO people(id,name,relation,notes,tags,last_contact_at,cadence_days,birthday,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`)
-      .run(p.id, p.name, p.relation ?? null, p.notes ?? null, JSON.stringify(p.tags), p.lastContactAt ?? null, p.cadenceDays ?? null, p.birthday ?? null, p.createdAt, p.updatedAt);
+      .prepare(`INSERT INTO people(id,name,relation,notes,tags,last_contact_at,cadence_days,birthday,hourly_rate,currency,expected_weekly_hours,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(p.id, p.name, p.relation ?? null, p.notes ?? null, JSON.stringify(p.tags), p.lastContactAt ?? null, p.cadenceDays ?? null, p.birthday ?? null, p.hourlyRate ?? null, p.currency ?? null, p.expectedWeeklyHours ?? null, p.createdAt, p.updatedAt);
     return p;
   }
   updatePerson(id: string, patch: Partial<Person>): Person | undefined {
@@ -344,8 +351,8 @@ export class Repo {
     if (!cur) return undefined;
     const next: Person = { ...cur, ...patch, id, updatedAt: nowIso() };
     this.db
-      .prepare(`UPDATE people SET name=?,relation=?,notes=?,tags=?,last_contact_at=?,cadence_days=?,birthday=?,updated_at=? WHERE id=?`)
-      .run(next.name, next.relation ?? null, next.notes ?? null, JSON.stringify(next.tags), next.lastContactAt ?? null, next.cadenceDays ?? null, next.birthday ?? null, next.updatedAt, id);
+      .prepare(`UPDATE people SET name=?,relation=?,notes=?,tags=?,last_contact_at=?,cadence_days=?,birthday=?,hourly_rate=?,currency=?,expected_weekly_hours=?,updated_at=? WHERE id=?`)
+      .run(next.name, next.relation ?? null, next.notes ?? null, JSON.stringify(next.tags), next.lastContactAt ?? null, next.cadenceDays ?? null, next.birthday ?? null, next.hourlyRate ?? null, next.currency ?? null, next.expectedWeeklyHours ?? null, next.updatedAt, id);
     return next;
   }
   deletePerson(id: string): boolean {
@@ -564,6 +571,32 @@ export class Repo {
     this.db.prepare("UPDATE ledger SET undone_at = ? WHERE id = ?").run(nowIso(), id);
   }
 
+  // ---------- work logs ----------
+  private rowToWorkLog(r: Row): WorkLog {
+    return { id: String(r.id), personId: String(r.person_id), date: String(r.date), minutes: Number(r.minutes), source: r.source as WorkLog["source"], note: s(r.note), importedAt: String(r.imported_at) };
+  }
+  listWorklogs(personId?: string, range?: { from: string; to: string }): WorkLog[] {
+    const where: string[] = [];
+    const args: (string | number)[] = [];
+    if (personId) { where.push("person_id = ?"); args.push(personId); }
+    if (range) { where.push("date >= ? AND date <= ?"); args.push(range.from, range.to); }
+    const sql = `SELECT * FROM worklogs${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY date ASC`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.rowToWorkLog(r));
+  }
+  /** Upsert by (person, date): one truth per day whatever the source; re-importing is idempotent and picks up corrections. */
+  upsertWorklog(input: Omit<WorkLog, "id" | "importedAt"> & { id?: string }): { log: WorkLog; changed: boolean } {
+    const existing = this.db.prepare("SELECT * FROM worklogs WHERE person_id = ? AND date = ?").get(input.personId, input.date) as Row | undefined;
+    if (existing && Number(existing.minutes) === input.minutes) return { log: this.rowToWorkLog(existing), changed: false };
+    const log: WorkLog = { id: existing ? String(existing.id) : (input.id ?? uid("wlg")), personId: input.personId, date: input.date, minutes: input.minutes, source: input.source, note: input.note, importedAt: nowIso() };
+    this.db
+      .prepare(`INSERT INTO worklogs(id,person_id,date,minutes,source,note,imported_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(person_id,date) DO UPDATE SET minutes=excluded.minutes, source=excluded.source, note=excluded.note, imported_at=excluded.imported_at`)
+      .run(log.id, log.personId, log.date, log.minutes, log.source, log.note ?? null, log.importedAt);
+    return { log, changed: true };
+  }
+  deleteWorklog(id: string): boolean {
+    return (this.db.prepare("DELETE FROM worklogs WHERE id = ?").run(id).changes ?? 0) > 0;
+  }
+
   // ---------- export / import ----------
   exportAll(): Record<string, unknown> {
     return {
@@ -580,6 +613,7 @@ export class Repo {
       goals: this.listGoals(true),
       outcomes: this.listOutcomes(),
       ledger: this.listLedger(500),
+      worklogs: this.listWorklogs(),
     };
   }
   importAll(data: Record<string, unknown>): { imported: Record<string, number> } {
@@ -593,6 +627,7 @@ export class Repo {
       for (const m of arr<Memory>("memories")) if (!this.getMemory(m.id)) { this.createMemory({ ...m, source: m.source ?? "imported" }); counts.memories = (counts.memories ?? 0) + 1; }
       for (const p of arr<Person>("people")) if (!this.getPerson(p.id)) { this.createPerson(p); counts.people = (counts.people ?? 0) + 1; }
       for (const g of arr<Goal>("goals")) if (!this.getGoal(g.id)) { this.createGoal(g); counts.goals = (counts.goals ?? 0) + 1; }
+      for (const w of arr<WorkLog>("worklogs")) if (this.getPerson(w.personId) && this.upsertWorklog(w).changed) counts.worklogs = (counts.worklogs ?? 0) + 1;
       const haveOutcomes = new Set(this.listOutcomes().map((o) => o.taskId + o.completedAt));
       for (const o of arr<Outcome>("outcomes")) if (!haveOutcomes.has(o.taskId + o.completedAt)) { this.addOutcome(o); counts.outcomes = (counts.outcomes ?? 0) + 1; }
       for (const r of arr<Ritual>("rituals")) { this.upsertRitual(r); counts.rituals = (counts.rituals ?? 0) + 1; }
@@ -620,6 +655,7 @@ export class Repo {
       this.upsertWatcher({ id: "wat_unplanned", kind: "unplanned_day", name: "Unplanned day", threshold: 0, cooldownMin: 24 * 60 });
     }
     if (!this.listWatchers().some((w) => w.kind === "deadline_risk")) this.upsertWatcher({ id: "wat_risk", kind: "deadline_risk", name: "Guardian: deadline at risk", threshold: 0.5, cooldownMin: 6 * 60 });
+    if (!this.listWatchers().some((w) => w.kind === "team_hours")) this.upsertWatcher({ id: "wat_team", kind: "team_hours", name: "Team hours running light", threshold: 0.6, cooldownMin: 24 * 60 });
     if (!this.listRituals().some((r) => r.kind === "reflection")) this.upsertRitual({ id: "rit_reflect", name: "Nightly reflection", kind: "reflection", rule: { freq: "daily", time: "23:30" } });
   }
 }

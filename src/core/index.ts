@@ -11,3 +11,4 @@ export * from "./goals.js";
 export * from "./learning.js";
 export * from "./simulate.js";
 export * from "./council.js";
+export * from "./worklog.js";

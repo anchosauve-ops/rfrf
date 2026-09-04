@@ -11,6 +11,10 @@ export function SettingsView() {
   const ctx = useStore((s) => s.ctx);
   const [p, setP] = useState<Prefs>();
   const [key, setKey] = useState("");
+  const [token, setToken] = useState<string>();
+  useEffect(() => { api.get<{ token: string }>("/worklog/token").then((r) => setToken(r.token)).catch(() => {}); }, []);
+  const serverUrl = typeof location !== "undefined" ? (location.port === "5173" ? `${location.protocol}//${location.hostname}:8787` : location.origin) : "http://127.0.0.1:8787";
+  const bookmarklet = token ? `javascript:(function(){window.__KAIROS__={server:${JSON.stringify(serverUrl)},token:${JSON.stringify(token)}};var s=document.createElement('script');s.src=${JSON.stringify(serverUrl + "/timeproof.js")}+'?v='+Date.now();document.body.appendChild(s);})();` : "#";
   useEffect(() => { api.get<Prefs>("/prefs").then(setP).catch(() => {}); }, [ctx?.prefs]);
   const zones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [p?.timezone ?? "UTC"];
 
@@ -92,6 +96,20 @@ export function SettingsView() {
           ))}
           <button className="btn sm" style={{ alignSelf: "flex-start" }} onClick={() => void save({ energyCurve: [...p.energyCurve, { fromMin: 19 * 60, toMin: 21 * 60, best: "light" }] })}>+ Add window</button>
         </div>
+      </div>
+
+      <h2 className="section">Connections</h2>
+      <div className="card stack" style={{ gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 600 }}>OnlineJobs.ph Timeproof</div>
+          <div className="muted small">Pull a worker's hours straight from their Timeproof calendar. Drag the button to your bookmarks bar, open the worker's Timeproof month, click it. Day totals land on the worker; week and month totals are ignored. Re-running a month is safe and picks up corrections.</div>
+        </div>
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <a className="bookmarklet" href={bookmarklet} onClick={(e) => { e.preventDefault(); toast("Drag this button to your bookmarks bar, don't click it here."); }} draggable>◐ Send to Kairos</a>
+          <span className="muted small">Talks to <span className="mono">{serverUrl}</span> using a private token{token ? "" : " (loading…)"}.</span>
+          <button className="btn sm ghost" onClick={async () => { const r = await api.post<{ token: string }>("/worklog/token/rotate"); setToken(r.token); toast("Token rotated; re-drag the bookmarklet"); }}>Rotate token</button>
+        </div>
+        <div className="muted small">No bookmarks bar? Select the whole Timeproof calendar, copy, and tell Kairos “import timeproof for Erica:” followed by the paste. Or just say “Erica worked 7:04 on Aug 31”.</div>
       </div>
 
       <h2 className="section">Your data</h2>

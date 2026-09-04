@@ -5,6 +5,7 @@ import { runCommand, setState, useStore } from "../lib/store";
 import { api, emitLocal } from "../lib/api";
 import { I } from "./Icons";
 import { CalibrationCard, CouncilCard, GoalsCard, LedgerCard, RiskCard } from "./SymbiosisCards";
+import { PayrollCard } from "./PayrollCard";
 
 export function EnergyDot({ e }: { e?: string }) {
   return e ? <i className={`dot ${e}`} title={e} /> : null;
@@ -187,6 +188,8 @@ export function CardView({ card, now }: { card: Card; now: Date }) {
       return <GoalsCard goals={card.goals} alignment={card.alignment} />;
     case "ledger":
       return <LedgerCard entries={card.entries} />;
+    case "payroll":
+      return <PayrollCard payroll={card.payroll} compact />;
     case "focus":
       return (
         <div className="acard focus-card">

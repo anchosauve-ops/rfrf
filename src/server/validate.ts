@@ -135,7 +135,28 @@ export function personPatch(raw: Raw): Partial<Person> {
     lastContactAt: clear(iso(raw.lastContactAt, "lastContactAt")),
     cadenceDays: int(raw.cadenceDays ?? raw.cadence_days, "cadenceDays", 1, 3650),
     birthday: clear(nullableStr(raw.birthday, 5, "birthday")),
+    hourlyRate: raw.hourlyRate === null ? undefined : num(raw.hourlyRate ?? raw.hourly_rate, "hourlyRate", 0, 100000),
+    currency: clear(nullableStr(raw.currency, 3, "currency"))?.toUpperCase(),
+    expectedWeeklyHours: raw.expectedWeeklyHours === null ? undefined : num(raw.expectedWeeklyHours ?? raw.expected_weekly_hours, "expectedWeeklyHours", 0, 168),
   });
+}
+
+export function worklogImport(raw: Raw): { person?: string; personId?: string; days: { date: string; minutes: number }[]; source: "timeproof" | "paste" | "manual" | "import"; text?: string } {
+  const person = str(raw.person, 200, "person");
+  const personId = str(raw.personId, 64, "personId");
+  const text = str(raw.text, 200_000, "text");
+  const source = oneOf(raw.source, "source", ["timeproof", "paste", "manual", "import"] as const) ?? "import";
+  const days: { date: string; minutes: number }[] = [];
+  if (Array.isArray(raw.days)) {
+    for (const d of raw.days.slice(0, 400)) {
+      if (!d || typeof d !== "object") continue;
+      const date = str((d as Raw).date, 10, "days.date");
+      const minutes = int((d as Raw).minutes, "days.minutes", 0, 24 * 60);
+      if (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && minutes !== undefined) days.push({ date, minutes });
+    }
+  }
+  if (!days.length && !text) throw new ValidationError("send days[] or text");
+  return { person, personId, days, source, text };
 }
 
 export function goalPatch(raw: Raw): Partial<Goal> {

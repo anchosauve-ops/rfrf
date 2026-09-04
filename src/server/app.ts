@@ -11,7 +11,8 @@ import { Agent } from "./agent/index.js";
 import { Scheduler } from "./scheduler.js";
 import { Bus } from "./bus.js";
 import { dayKey, parseChrono, describeCalibration, setTime, addDays, startOfDay, type Preferences } from "../core/index.js";
-import { ValidationError, taskPatch, eventPatch, memoryPatch, personPatch, goalPatch, ritualPatch, watcherPatch, prefsPatch } from "./validate.js";
+import { ValidationError, taskPatch, eventPatch, memoryPatch, personPatch, goalPatch, ritualPatch, watcherPatch, prefsPatch, worklogImport } from "./validate.js";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { secretKey, seal, open as unseal } from "./secrets.js";
 import { writeBackup, backupDir, lastBackupAt } from "./backup.js";
 
@@ -56,12 +57,26 @@ export function createApp(opts: AppOptions = {}) {
   const now = () => opts.now?.() ?? new Date();
 
   const app = new Hono();
+  // One install-scoped token lets the Timeproof bookmarklet push hours in from onlinejobs.ph.
+  const importToken = () => {
+    let t = repo.getMeta("import_token");
+    if (!t) { t = randomBytes(18).toString("base64url"); repo.setMeta("import_token", t); }
+    return t;
+  };
+  const tokenOk = (given: string | undefined) => {
+    const want = Buffer.from(importToken());
+    const got = Buffer.from(given ?? "");
+    return got.length === want.length && timingSafeEqual(got, want);
+  };
+  // The import endpoint is the one route a foreign origin may call, and only with the token.
+  app.use("/api/worklog/import", cors({ origin: (o) => o || "*", allowHeaders: ["content-type", "x-kairos-token"], allowMethods: ["POST", "OPTIONS"] }));
   // Local-first: only the app's own origin (and the Vite dev server) may call the API from a browser.
   app.use(
     "/api/*",
     cors({
-      origin: (origin) => {
+      origin: (origin, c) => {
         if (!origin) return origin;
+        if (c.req.path === "/api/worklog/import") return origin;
         const allowed = (process.env.KAIROS_ALLOWED_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173").split(",").map((o) => o.trim());
         if (allowed.includes(origin)) return origin;
         try {
@@ -257,6 +272,49 @@ export function createApp(opts: AppOptions = {}) {
     notify("person");
     return c.json(p);
   });
+  // ---------- team: work logs & payroll ----------
+  app.get("/api/team", (c) => c.json(svc.teamSummary(now())));
+  app.get("/api/people/:id/worklog", (c) => {
+    const p = repo.getPerson(c.req.param("id"));
+    if (!p) return c.json({ error: "not found" }, 404);
+    const from = c.req.query("from");
+    const to = c.req.query("to");
+    return c.json(repo.listWorklogs(p.id, from && to ? { from, to } : undefined));
+  });
+  app.get("/api/people/:id/payroll", (c) => {
+    const p = repo.getPerson(c.req.param("id"));
+    if (!p) return c.json({ error: "not found" }, 404);
+    return c.json(svc.payroll(p, c.req.query("period") ?? undefined, now()));
+  });
+  app.delete("/api/worklog/:id", (c) => {
+    if (!repo.deleteWorklog(c.req.param("id"))) return c.json({ error: "not found" }, 404);
+    notify("worklog");
+    return c.json({ ok: true });
+  });
+  app.get("/api/worklog/token", (c) => c.json({ token: importToken() }));
+  app.post("/api/worklog/token/rotate", (c) => {
+    repo.setMeta("import_token", randomBytes(18).toString("base64url"));
+    return c.json({ token: importToken() });
+  });
+  /** Bookmarklet / paste target. Same-origin callers are trusted; foreign origins must present the token. */
+  app.post("/api/worklog/import", async (c) => {
+    const origin = c.req.header("origin");
+    const foreign = !!origin && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin) && origin !== new URL(c.req.url).origin;
+    if (foreign && !tokenOk(c.req.header("x-kairos-token"))) return c.json({ error: "bad or missing import token" }, 401);
+    const body = worklogImport(await json<Record<string, unknown>>(c));
+    let person = body.personId ? repo.getPerson(body.personId) : body.person ? repo.findPerson(body.person) : undefined;
+    if (!person && body.person) person = repo.createPerson({ name: body.person, relation: "worker" });
+    if (!person) {
+      const paid = repo.listPeople().filter((p) => p.hourlyRate);
+      if (paid.length === 1) person = paid[0];
+    }
+    if (!person) return c.json({ error: "say who these hours belong to (person or personId)" }, 400);
+    const t = now();
+    const result = body.days.length ? svc.importWorklog(person, body.days, body.source, t) : svc.importWorklogText(person, body.text!, body.source === "import" ? "paste" : body.source, t);
+    notify("worklog");
+    return c.json({ ok: true, person: { id: person.id, name: person.name, hourlyRate: person.hourlyRate ?? null }, ...result, payroll: person.hourlyRate ? svc.payroll(person, "this month", t) : null });
+  });
+
   app.post("/api/people/:id/touch", (c) => {
     const p = repo.updatePerson(c.req.param("id"), { lastContactAt: now().toISOString() });
     if (!p) return c.json({ error: "not found" }, 404);
